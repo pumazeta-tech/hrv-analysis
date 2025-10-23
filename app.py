@@ -32,7 +32,7 @@ def init_session_state():
         st.session_state.user_profile = {
             'name': '',
             'surname': '',
-            'birth_date': None,  # Cambiato a None per evitare errori
+            'birth_date': None,
             'gender': 'Uomo',
             'age': 0
         }
@@ -53,26 +53,6 @@ def extract_datetime_from_content(content):
             return datetime(year, month, day, hour, minute, second)
         except ValueError:
             pass
-    
-    # Pattern alternativo per altri formati
-    patterns = [
-        r'(\d{1,2})[\./-](\d{1,2})[\./-](\d{4})[\sT](\d{1,2}):(\d{2}):(\d{2})',
-        r'(\d{4})[\./-](\d{1,2})[\./-](\d{1,2})[\sT](\d{1,2}):(\d{2}):(\d{2})',
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, content)
-        if match:
-            groups = match.groups()
-            if len(groups[0]) == 4:  # YYYY-MM-DD
-                year, month, day, hour, minute, second = map(int, groups[:6])
-            else:  # DD-MM-YYYY
-                day, month, year, hour, minute, second = map(int, groups[:6])
-            
-            try:
-                return datetime(year, month, day, hour, minute, second)
-            except ValueError:
-                continue
     
     return None
 
@@ -156,7 +136,7 @@ def create_user_profile():
         # Gestione valore iniziale
         current_birth_date = st.session_state.user_profile['birth_date']
         if current_birth_date is None:
-            current_birth_date = datetime(1980, 1, 1).date()  # Valore di default
+            current_birth_date = datetime(1980, 1, 1).date()
         
         birth_date = st.date_input(
             "Data di Nascita", 
@@ -201,53 +181,21 @@ def interpret_metrics_for_gender(metrics, gender, age):
     
     # Fattori di aggiustamento per sesso
     if gender == "Donna":
-        # Donne tendono ad avere valori HRV leggermente più alti
         sdnn_factor = 1.1
         rmssd_factor = 1.15
         coherence_factor = 1.05
     else:
-        # Uomini - valori standard
         sdnn_factor = 1.0
         rmssd_factor = 1.0
         coherence_factor = 1.0
     
     # Aggiustamento per età
-    age_factor = max(0.7, 1.0 - (age - 25) * 0.005)  # Riduzione dopo i 25 anni
+    age_factor = max(0.7, 1.0 - (age - 25) * 0.005)
     
     # Applica aggiustamenti
     adjusted_metrics['our_algo']['sdnn'] *= sdnn_factor * age_factor
     adjusted_metrics['our_algo']['rmssd'] *= rmssd_factor * age_factor
     adjusted_metrics['our_algo']['coherence'] *= coherence_factor
-    
-    # Interpretazioni specifiche per sesso
-    if gender == "Donna":
-        sdnn_interpretation = {
-            'basso': '< 35 ms',
-            'normale': '35-65 ms', 
-            'alto': '> 65 ms'
-        }
-        rmssd_interpretation = {
-            'basso': '< 25 ms',
-            'normale': '25-45 ms',
-            'alto': '> 45 ms'
-        }
-    else:
-        sdnn_interpretation = {
-            'basso': '< 30 ms',
-            'normale': '30-60 ms',
-            'alto': '> 60 ms'
-        }
-        rmssd_interpretation = {
-            'basso': '< 20 ms',
-            'normale': '20-40 ms', 
-            'alto': '> 40 ms'
-        }
-    
-    adjusted_metrics['interpretation'] = {
-        'sdnn': sdnn_interpretation,
-        'rmssd': rmssd_interpretation,
-        'gender_specific': True
-    }
     
     return adjusted_metrics
 
@@ -389,7 +337,7 @@ def save_to_history(metrics, start_datetime, end_datetime, analysis_type, select
         'end_datetime': end_datetime,
         'analysis_type': analysis_type,
         'selected_range': selected_range,
-        'user_profile': st.session_state.user_profile.copy(),  # COPIA CORRETTA
+        'user_profile': st.session_state.user_profile.copy(),
         'metrics': {
             'sdnn': metrics['our_algo']['sdnn'],
             'rmssd': metrics['our_algo']['rmssd'],
@@ -407,7 +355,6 @@ def show_analysis_history():
         
         history_data = []
         for i, analysis in enumerate(reversed(st.session_state.analysis_history[-5:])):
-            # CONTROLLO DI SICUREZZA per evitare KeyError
             user_profile = analysis.get('user_profile', {})
             metrics = analysis.get('metrics', {})
             
@@ -440,7 +387,7 @@ def calculate_triple_metrics(total_hours, actual_date, is_sleep_period=False, he
         'sleep_hr': None, 'sleep_rem': None, 'sleep_deep': None, 'sleep_wakeups': None,
     }
     
-    if is_sleep_period and total_hours >= 4:  # Ridotto a 4 ore minime
+    if is_sleep_period and total_hours >= 4:
         sleep_duration = min(8.0, total_hours * 0.9)
         sleep_metrics = {
             'sleep_duration': sleep_duration,
@@ -498,7 +445,6 @@ def calculate_triple_metrics(total_hours, actual_date, is_sleep_period=False, he
 
 def create_hrv_timeseries_plot(metrics, activities):
     """Crea il grafico temporale di SDNN, RMSSD, HR con attività"""
-    # Simula dati temporali per la durata della registrazione
     duration_hours = metrics['our_algo']['recording_hours']
     time_points = np.linspace(0, duration_hours, 100)
     
@@ -842,23 +788,41 @@ with st.sidebar:
         if rr_intervals_from_file is not None:
             st.info(f"📊 **{len(rr_intervals_from_file)} intervalli RR**")
     
-    # SELEZIONE INTERVALLO CON DATA/ORA SPECIFICHE
+    # SELEZIONE INTERVALLO CON DATA/ORA SPECIFICHE - VERSIONE CORRETTA
     st.subheader("🎯 Selezione Intervallo Analisi")
     
-    # Usa datetime_input invece di slider
-    col_dt1, col_dt2 = st.columns(2)
-    with col_dt1:
-        new_start_datetime = st.datetime_input(
-            "Data/Ora Inizio Analisi",
-            value=start_datetime,
-            key="start_datetime_selector"
+    # Usa date_input e time_input separatamente
+    col_date1, col_time1 = st.columns(2)
+    with col_date1:
+        start_date = st.date_input(
+            "Data Inizio",
+            value=start_datetime.date(),
+            key="start_date"
         )
-    with col_dt2:
-        new_end_datetime = st.datetime_input(
-            "Data/Ora Fine Analisi", 
-            value=end_datetime,
-            key="end_datetime_selector"
+    with col_time1:
+        start_time = st.time_input(
+            "Ora Inizio",
+            value=start_datetime.time(),
+            key="start_time"
         )
+    
+    col_date2, col_time2 = st.columns(2)
+    with col_date2:
+        end_date = st.date_input(
+            "Data Fine",
+            value=end_datetime.date(),
+            key="end_date"
+        )
+    with col_time2:
+        end_time = st.time_input(
+            "Ora Fine",
+            value=end_datetime.time(),
+            key="end_time"
+        )
+    
+    # Combina date e time
+    new_start_datetime = datetime.combine(start_date, start_time)
+    new_end_datetime = datetime.combine(end_date, end_time)
     
     # Aggiorna le date se modificate
     if new_start_datetime != start_datetime or new_end_datetime != end_datetime:
@@ -870,7 +834,7 @@ with st.sidebar:
     
     selected_duration = (end_datetime - start_datetime).total_seconds() / 3600
     st.info(f"⏱️ **Durata analisi:** {selected_duration:.1f} ore")
-    st.info(f"📅 **Periodo:** {start_datetime.strftime('%d/%m %H:%M')} - {end_datetime.strftime('%d/%m %H:%M')}")
+    st.info(f"📅 **Periodo:** {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}")
     
     # VERIFICA SE C'È PERIODO NOTTURNO (22:00-06:00)
     is_night_period = False
