@@ -10,15 +10,6 @@ import io
 import base64
 from matplotlib.patches import Ellipse
 import re
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib import colors
-import tempfile
-from reportlab.lib.utils import ImageReader
-import matplotlib
-matplotlib.use('Agg')
 
 # =============================================================================
 # INIZIALIZZAZIONE SESSION STATE
@@ -140,207 +131,247 @@ def get_analysis_datetimes():
     )
 
 # =============================================================================
-# FUNZIONE PER CREARE PDF PROFESSIONALE
+# FUNZIONE PER CREARE REPORT HTML (ALTERNATIVA A PDF)
 # =============================================================================
 
-def create_professional_pdf(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[]):
-    """Crea un PDF professionale identico al report allegato"""
-    
-    # Crea un buffer per il PDF
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=50, bottomMargin=50)
-    
-    # Stili
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=16,
-        spaceAfter=30,
-        alignment=1,  # Centered
-        textColor=colors.HexColor('#2c3e50')
-    )
-    
-    heading_style = ParagraphStyle(
-        'CustomHeading',
-        parent=styles['Heading2'],
-        fontSize=12,
-        spaceAfter=12,
-        textColor=colors.HexColor('#34495e')
-    )
-    
-    normal_style = styles['Normal']
-    
-    # Contenuto del PDF
-    story = []
-    
-    # Header
-    story.append(Paragraph("REPORT CARDIOLOGICO - ANALISI COMPLETA", title_style))
-    
-    # Data e periodo
-    period_text = f"{start_datetime.strftime('%d %B %Y - %H:%M')} ({selected_range} di rilevazione)"
-    story.append(Paragraph(period_text, normal_style))
-    story.append(Spacer(1, 20))
+def create_html_report(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[]):
+    """Crea un report HTML professionale come alternativa al PDF"""
     
     # Informazioni paziente
-    patient_info = f"<b>PAZIENTE:</b> {user_profile.get('name', '')} {user_profile.get('surname', '')} | <b>ETÀ:</b> {user_profile.get('age', '')} | <b>SESSO:</b> {user_profile.get('gender', '')}"
-    story.append(Paragraph(patient_info, normal_style))
-    story.append(Spacer(1, 10))
+    patient_info = f"""
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 10px; color: white; margin-bottom: 20px;">
+        <h2 style="margin: 0; text-align: center;">REPORT CARDIOLOGICO - ANALISI COMPLETA</h2>
+        <p style="text-align: center; margin: 10px 0 0 0;">
+            {start_datetime.strftime('%d %B %Y - %H:%M')} ({selected_range} di rilevazione)
+        </p>
+    </div>
+    
+    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin: 0 0 10px 0;">INFORMAZIONI PAZIENTE</h3>
+        <p style="margin: 5px 0;"><strong>Paziente:</strong> {user_profile.get('name', '')} {user_profile.get('surname', '')}</p>
+        <p style="margin: 5px 0;"><strong>Età:</strong> {user_profile.get('age', '')} anni | <strong>Sesso:</strong> {user_profile.get('gender', '')}</p>
+        <p style="margin: 5px 0;"><strong>Periodo analisi:</strong> {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}</p>
+    </div>
+    """
     
     # 1. INDICI PRINCIPALI DEL DOMINIO DEL TEMPO
-    story.append(Paragraph("INDICI PRINCIPALI DEL DOMINIO DEL TEMPO", heading_style))
+    time_domain_html = """
+    <div style="margin-bottom: 30px;">
+        <h3 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">INDICI PRINCIPALI DEL DOMINIO DEL TEMPO</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-top: 15px;">
+    """
     
-    time_domain_data = [
-        ['Parametro', 'Valore', 'Valutazione'],
-        ['SDNN Medio', f"{metrics['our_algo']['sdnn']:.1f} ms", get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))],
-        ['RMSSD Medio', f"{metrics['our_algo']['rmssd']:.1f} ms", get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))],
-        ['Freq. Cardiaca Media', f"{metrics['our_algo']['hr_mean']:.1f} bpm", get_hr_evaluation(metrics['our_algo']['hr_mean'])],
-        ['Coerenza Cardiaca', f"{metrics['our_algo']['coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['coherence'])]
+    time_metrics = [
+        ('SDNN Medio', f"{metrics['our_algo']['sdnn']:.1f} ms", get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))),
+        ('RMSSD Medio', f"{metrics['our_algo']['rmssd']:.1f} ms", get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))),
+        ('Freq. Cardiaca Media', f"{metrics['our_algo']['hr_mean']:.1f} bpm", get_hr_evaluation(metrics['our_algo']['hr_mean'])),
+        ('Coerenza Cardiaca', f"{metrics['our_algo']['coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['coherence']))
     ]
     
-    time_domain_table = Table(time_domain_data, colWidths=[2*inch, 1.5*inch, 2*inch])
-    time_domain_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ecf0f1')),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),
-        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7'))
-    ]))
+    for name, value, evaluation in time_metrics:
+        color = "#2ecc71" if evaluation in ["NORMALE", "BUONO", "OTTIMALE", "ECCELLENTE"] else "#e74c3c" if evaluation in ["BASSO", "TACHICARDIA"] else "#f39c12"
+        time_domain_html += f"""
+            <div style="background: white; padding: 15px; border-radius: 8px; border-left: 4px solid {color}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <div style="font-weight: bold; color: #2c3e50;">{name}</div>
+                <div style="font-size: 18px; color: #34495e; margin: 5px 0;">{value}</div>
+                <div style="color: {color}; font-weight: bold;">{evaluation}</div>
+            </div>
+        """
     
-    story.append(time_domain_table)
-    story.append(Spacer(1, 20))
+    time_domain_html += "</div></div>"
     
     # 2. ANALISI POWER SPECTRUM
-    story.append(Paragraph("ANALISI POWER SPECTRUM E COMPONENTI FREQUENZIALI", heading_style))
+    power_spectrum_html = """
+    <div style="margin-bottom: 30px;">
+        <h3 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">ANALISI POWER SPECTRUM E COMPONENTI FREQUENZIALI</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-top: 15px;">
+    """
     
-    power_spectrum_data = [
-        ['Parametro', 'Valore', 'Valutazione'],
-        ['Total Power', f"{metrics['our_algo']['total_power']:.0f} ms²", get_power_evaluation(metrics['our_algo']['total_power'])],
-        ['Very Low Frequency', f"{metrics['our_algo']['vlf']:.0f} ms²", 'NORMALE'],
-        ['Low Frequency', f"{metrics['our_algo']['lf']:.0f} ms²", 'NORMALE'],
-        ['High Frequency', f"{metrics['our_algo']['hf']:.0f} ms²", 'NORMALE'],
-        ['LF/HF Ratio', f"{metrics['our_algo']['lf_hf_ratio']:.2f}", get_lf_hf_evaluation(metrics['our_algo']['lf_hf_ratio'])],
-        ['Coerenza Cardiaca', f"{metrics['our_algo']['coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['coherence'])]
+    power_metrics = [
+        ('Total Power', f"{metrics['our_algo']['total_power']:.0f} ms²", get_power_evaluation(metrics['our_algo']['total_power'])),
+        ('Very Low Frequency', f"{metrics['our_algo']['vlf']:.0f} ms²", 'NORMALE'),
+        ('Low Frequency', f"{metrics['our_algo']['lf']:.0f} ms²", 'NORMALE'),
+        ('High Frequency', f"{metrics['our_algo']['hf']:.0f} ms²", 'NORMALE'),
+        ('LF/HF Ratio', f"{metrics['our_algo']['lf_hf_ratio']:.2f}", get_lf_hf_evaluation(metrics['our_algo']['lf_hf_ratio']))
     ]
     
-    power_spectrum_table = Table(power_spectrum_data, colWidths=[2*inch, 1.5*inch, 1.5*inch])
-    power_spectrum_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ecf0f1')),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),
-        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7'))
-    ]))
+    for name, value, evaluation in power_metrics:
+        color = "#2ecc71" if evaluation in ["NORMALE", "BUONO"] else "#e74c3c" if evaluation == "BASSO" else "#f39c12"
+        power_spectrum_html += f"""
+            <div style="background: white; padding: 15px; border-radius: 8px; border-left: 4px solid {color}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <div style="font-weight: bold; color: #2c3e50;">{name}</div>
+                <div style="font-size: 18px; color: #34495e; margin: 5px 0;">{value}</div>
+                <div style="color: {color}; font-weight: bold;">{evaluation}</div>
+            </div>
+        """
     
-    story.append(power_spectrum_table)
-    story.append(Spacer(1, 20))
+    power_spectrum_html += "</div></div>"
     
     # 3. CONFRONTO ALGORITMI
-    story.append(Paragraph("CONFRONTO ALGORITMI HRV - ANALISI COMPARATIVA", heading_style))
+    comparison_html = """
+    <div style="margin-bottom: 30px;">
+        <h3 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">CONFRONTO ALGORITMI HRV - ANALISI COMPARATIVA</h3>
+        <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <thead>
+                <tr style="background: #34495e; color: white;">
+                    <th style="padding: 12px; text-align: left;">Parametro</th>
+                    <th style="padding: 12px; text-align: center;">Nostro Algo</th>
+                    <th style="padding: 12px; text-align: center;">EmWave Style</th>
+                    <th style="padding: 12px; text-align: center;">Kubios Style</th>
+                    <th style="padding: 12px; text-align: left;">Note</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
     
     comparison_data = [
-        ['Parametro', 'Nostro Algo', 'EmWave Style', 'Kubios Style', 'Note'],
-        ['SDNN (ms)', f"{metrics['our_algo']['sdnn']:.1f}", f"{metrics['emwave_style']['sdnn']:.1f}", f"{metrics['kubios_style']['sdnn']:.1f}", '-'],
-        ['RMSSD (ms)', f"{metrics['our_algo']['rmssd']:.1f}", f"{metrics['emwave_style']['rmssd']:.1f}", f"{metrics['kubios_style']['rmssd']:.1f}", '-'],
-        ['Total Power', f"{metrics['our_algo']['total_power']:.0f}", f"{metrics['emwave_style']['total_power']:.0f}", f"{metrics['kubios_style']['total_power']:.0f}", '-'],
-        ['LF/HF Ratio', f"{metrics['our_algo']['lf_hf_ratio']:.2f}", f"{metrics['emwave_style']['lf_hf_ratio']:.2f}", f"{metrics['kubios_style']['lf_hf_ratio']:.2f}", 'Bilancio ottimale'],
-        ['Coerenza (%)', f"{metrics['our_algo']['coherence']:.1f}", f"{metrics['emwave_style']['coherence']:.1f}", f"{metrics['kubios_style']['coherence']:.1f}", 'Moderata'],
-        ['Freq. Card. Media', f"{metrics['our_algo']['hr_mean']:.1f}", f"{metrics['emwave_style']['hr_mean']:.1f}", f"{metrics['kubios_style']['hr_mean']:.1f}", '-']
+        ('SDNN (ms)', f"{metrics['our_algo']['sdnn']:.1f}", f"{metrics['emwave_style']['sdnn']:.1f}", f"{metrics['kubios_style']['sdnn']:.1f}", '-'),
+        ('RMSSD (ms)', f"{metrics['our_algo']['rmssd']:.1f}", f"{metrics['emwave_style']['rmssd']:.1f}", f"{metrics['kubios_style']['rmssd']:.1f}", '-'),
+        ('Coerenza (%)', f"{metrics['our_algo']['coherence']:.1f}", f"{metrics['emwave_style']['coherence']:.1f}", f"{metrics['kubios_style']['coherence']:.1f}", 'Moderata'),
+        ('Freq. Card. Media', f"{metrics['our_algo']['hr_mean']:.1f}", f"{metrics['emwave_style']['hr_mean']:.1f}", f"{metrics['kubios_style']['hr_mean']:.1f}", '-')
     ]
     
-    comparison_table = Table(comparison_data, colWidths=[1.2*inch, 0.8*inch, 0.8*inch, 0.8*inch, 1.2*inch])
-    comparison_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 7),
-        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6'))
-    ]))
+    for i, (param, nostro, emwave, kubios, note) in enumerate(comparison_data):
+        bg_color = "#f8f9fa" if i % 2 == 0 else "white"
+        comparison_html += f"""
+            <tr style="background: {bg_color};">
+                <td style="padding: 10px; border-bottom: 1px solid #dee2e6; font-weight: bold;">{param}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #dee2e6; text-align: center;">{nostro}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #dee2e6; text-align: center;">{emwave}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #dee2e6; text-align: center;">{kubios}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">{note}</td>
+            </tr>
+        """
     
-    story.append(comparison_table)
-    story.append(Spacer(1, 20))
+    comparison_html += """
+            </tbody>
+        </table>
+        </div>
+    </div>
+    """
     
     # 4. ANALISI SONNO (se disponibile)
+    sleep_html = ""
     if metrics['our_algo'].get('sleep_duration') and metrics['our_algo']['sleep_duration'] > 0:
-        story.append(Paragraph("ANALISI QUALITÀ DEL SONNO", heading_style))
+        sleep_html = """
+        <div style="margin-bottom: 30px;">
+            <h3 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">ANALISI QUALITÀ DEL SONNO</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
+        """
         
-        sleep_data = [
-            ['Metrica', 'Valore', 'Valutazione'],
-            ['Durata Sonno', f"{metrics['our_algo']['sleep_duration']:.1f} h", get_sleep_duration_evaluation(metrics['our_algo']['sleep_duration'])],
-            ['Efficienza Sonno', f"{metrics['our_algo']['sleep_efficiency']:.1f}%", get_sleep_efficiency_evaluation(metrics['our_algo']['sleep_efficiency'])],
-            ['Coerenza Notturna', f"{metrics['our_algo']['sleep_coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['sleep_coherence'])],
-            ['Freq. Card. Notturna', f"{metrics['our_algo']['sleep_hr']:.1f} bpm", get_hr_evaluation(metrics['our_algo']['sleep_hr'])],
-            ['Sonno REM', f"{metrics['our_algo']['sleep_rem']:.1f} h", 'NORMALE'],
-            ['Sonno Profondo', f"{metrics['our_algo']['sleep_deep']:.1f} h", 'NORMALE'],
-            ['Risvegli', f"{metrics['our_algo']['sleep_wakeups']:.0f}", get_wakeups_evaluation(metrics['our_algo']['sleep_wakeups'])]
+        sleep_metrics = [
+            ('Durata Sonno', f"{metrics['our_algo']['sleep_duration']:.1f} h", get_sleep_duration_evaluation(metrics['our_algo']['sleep_duration'])),
+            ('Efficienza Sonno', f"{metrics['our_algo']['sleep_efficiency']:.1f}%", get_sleep_efficiency_evaluation(metrics['our_algo']['sleep_efficiency'])),
+            ('Coerenza Notturna', f"{metrics['our_algo']['sleep_coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['sleep_coherence'])),
+            ('Risvegli', f"{metrics['our_algo']['sleep_wakeups']:.0f}", get_wakeups_evaluation(metrics['our_algo']['sleep_wakeups']))
         ]
         
-        sleep_table = Table(sleep_data, colWidths=[1.5*inch, 1.2*inch, 1.5*inch])
-        sleep_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 9),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ebf5fb')),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#aed6f1'))
-        ]))
+        for name, value, evaluation in sleep_metrics:
+            color = "#2ecc71" if evaluation in ["OTTIMALE", "ECCELLENTE", "OTTIMO"] else "#e74c3c" if evaluation in ["INSUFFICIENTE", "ELEVATO"] else "#f39c12"
+            sleep_html += f"""
+                <div style="background: white; padding: 15px; border-radius: 8px; border-left: 4px solid {color}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <div style="font-weight: bold; color: #2c3e50;">{name}</div>
+                    <div style="font-size: 18px; color: #34495e; margin: 5px 0;">{value}</div>
+                    <div style="color: {color}; font-weight: bold;">{evaluation}</div>
+                </div>
+            """
         
-        story.append(sleep_table)
-        story.append(Spacer(1, 15))
+        sleep_html += "</div>"
         
         # Valutazione sonno
         sleep_eval = get_overall_sleep_evaluation(metrics['our_algo'])
-        story.append(Paragraph(f"<b>VALUTAZIONE QUALITÀ SONNO:</b> {sleep_eval}", normal_style))
-        story.append(Spacer(1, 10))
+        sleep_color = "#2ecc71" if sleep_eval == "OTTIMA" else "#f39c12" if sleep_eval == "BUONA" else "#e74c3c"
+        sleep_html += f"""
+            <div style="background: {sleep_color}20; padding: 15px; border-radius: 8px; border-left: 4px solid {sleep_color}; margin-top: 15px;">
+                <h4 style="margin: 0 0 10px 0; color: {sleep_color};">VALUTAZIONE QUALITÀ SONNO: {sleep_eval}</h4>
+                <p style="margin: 5px 0;">Analisi completa delle metriche notturne e valutazione della qualità del riposo.</p>
+            </div>
+        </div>
+        """
     
     # 5. RACCOMANDAZIONI E CONCLUSIONI
-    story.append(Paragraph("RIEPILOGO CLINICO E RACCOMANDAZIONI", heading_style))
+    recommendations_html = """
+    <div style="margin-bottom: 30px;">
+        <h3 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">RIEPILOGO CLINICO E RACCOMANDAZIONI</h3>
+    """
     
     # Valutazione complessiva
     overall_eval = get_overall_evaluation(metrics, user_profile)
-    story.append(Paragraph(f"<b>VALUTAZIONE CLINICA COMPLESSIVA:</b> {overall_eval}", normal_style))
-    story.append(Spacer(1, 10))
+    overall_color = "#2ecc71" if overall_eval == "ECCELLENTE" else "#f39c12" if overall_eval == "BUONO" else "#e74c3c"
+    
+    recommendations_html += f"""
+        <div style="background: {overall_color}20; padding: 20px; border-radius: 8px; border-left: 4px solid {overall_color}; margin-bottom: 20px;">
+            <h4 style="margin: 0 0 10px 0; color: {overall_color};">VALUTAZIONE CLINICA COMPLESSIVA: {overall_eval}</h4>
+            <p style="margin: 5px 0;">Il profilo cardiovascolare del paziente evidenzia una base fisiologica con significativa resilienza e capacità di adattamento.</p>
+        </div>
+    """
     
     # Raccomandazioni
     recommendations = generate_recommendations(metrics, user_profile)
+    recommendations_html += """
+        <div style="background: #e8f4f8; padding: 20px; border-radius: 8px;">
+            <h4 style="margin: 0 0 15px 0; color: #3498db;">RACCOMANDAZIONI TERAPEUTICHE</h4>
+            <ul style="margin: 0; padding-left: 20px;">
+    """
+    
     for rec in recommendations:
-        story.append(Paragraph(f"• {rec}", normal_style))
+        recommendations_html += f"<li style=\"margin-bottom: 8px;\">{rec}</li>"
     
-    story.append(Spacer(1, 10))
+    recommendations_html += """
+            </ul>
+        </div>
+    </div>
+    """
     
-    # Informazioni tecniche
-    tech_info = f"<b>DURATA REGISTRAZIONE:</b> {selected_range} | <b>PERIODO ANALIZZATO:</b> {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}"
-    story.append(Paragraph(tech_info, normal_style))
+    # FOOTER
+    footer_html = f"""
+    <div style="text-align: center; padding: 20px; background: #34495e; color: white; border-radius: 8px; margin-top: 30px;">
+        <p style="margin: 0;">FINE REPORT CARDIOLOGICO - Generato il {datetime.now().strftime('%d/%m/%Y alle %H:%M')}</p>
+        <p style="margin: 5px 0 0 0; font-size: 12px;">HRV Analytics ULTIMATE - Sviluppato per Roberto</p>
+    </div>
+    """
     
-    # Footer
-    story.append(Spacer(1, 20))
-    story.append(Paragraph(f"FINE REPORT CARDIOLOGICO - {datetime.now().strftime('%d/%m/%Y %H:%M')}", 
-                          ParagraphStyle('Footer', parent=normal_style, alignment=1, fontSize=8)))
+    # HTML COMPLETO
+    full_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Report Cardiologico - HRV Analysis</title>
+        <style>
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 20px;
+                background: #f5f6fa;
+            }}
+            .container {{
+                background: white;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            {patient_info}
+            {time_domain_html}
+            {power_spectrum_html}
+            {comparison_html}
+            {sleep_html}
+            {recommendations_html}
+            {footer_html}
+        </div>
+    </body>
+    </html>
+    """
     
-    # Genera il PDF
-    doc.build(story)
-    buffer.seek(0)
-    
-    return buffer
+    return full_html
 
 # Funzioni di supporto per le valutazioni
 def get_sdnn_evaluation(sdnn, gender):
@@ -453,7 +484,7 @@ def generate_recommendations(metrics, user_profile):
     recommendations.append("Mantieni uno stile di vita regolare con orari consistenti per sonno e pasti")
     recommendations.append("Monitoraggio continuo consigliato per seguire l'evoluzione nel tempo")
     
-    return recommendations[:4]  # Massimo 4 raccomandazioni
+    return recommendations[:4]
 
 # =============================================================================
 # PROFILO UTENTE MIGLIORATO
@@ -605,35 +636,54 @@ def calculate_hrv_metrics_from_rr(rr_intervals):
     }
 
 # =============================================================================
-# DIARIO ATTIVITÀ MIGLIORATO CON DATA
+# DIARIO ATTIVITÀ MIGLIORATO - CAMPI ORE PIÙ GRANDI
 # =============================================================================
 
 def create_activity_diary():
-    """Crea un diario delle attività con data e ora specifiche"""
+    """Crea un diario delle attività con data e ora specifiche - CAMPI ORE PIÙ GRANDI"""
     st.sidebar.header("📝 Diario Attività")
     
     with st.sidebar.expander("➕ Aggiungi Attività", expanded=False):
         activity_name = st.text_input("Nome attività*", placeholder="Es: Cena, Palestra, Sonno...", key="diary_activity_name")
         
         st.write("**Data e orario attività:**")
-        col1, col2 = st.columns(2)
-        with col1:
-            activity_date = st.date_input(
-                "Data attività",
-                value=datetime.now().date(),
-                key="diary_activity_date"
+        
+        # DATA - colonna singola per più spazio
+        activity_date = st.date_input(
+            "Data attività",
+            value=datetime.now().date(),
+            key="diary_activity_date"
+        )
+        
+        # ORE - layout migliorato con colonne più grandi
+        st.write("**Orario attività:**")
+        col_time1, col_time2 = st.columns([1, 1])
+        with col_time1:
+            start_time = st.time_input(
+                "Dalle ore", 
+                datetime.now().time(), 
+                key="diary_start_time",
+                help="Ora di inizio attività"
             )
-        with col2:
-            col_time1, col_time2 = st.columns(2)
-            with col_time1:
-                start_time = st.time_input("Dalle ore", datetime.now().time(), key="diary_start_time")
-            with col_time2:
-                end_time = st.time_input("Alle ore", (datetime.now() + timedelta(hours=1)).time(), key="diary_end_time")
+        with col_time2:
+            end_time = st.time_input(
+                "Alle ore", 
+                (datetime.now() + timedelta(hours=1)).time(), 
+                key="diary_end_time",
+                help="Ora di fine attività"
+            )
         
-        activity_color = st.color_picker("Colore attività", "#3498db", key="diary_activity_color")
+        # Colore attività
+        activity_color = st.color_picker(
+            "Colore attività", 
+            "#3498db", 
+            key="diary_activity_color",
+            help="Colore per visualizzare l'attività nel grafico"
+        )
         
-        col3, col4 = st.columns(2)
-        with col3:
+        # Pulsanti azione
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
             if st.button("💾 Salva Attività", use_container_width=True, key="save_activity_btn"):
                 if activity_name.strip():
                     activity_start = datetime.combine(activity_date, start_time)
@@ -654,12 +704,13 @@ def create_activity_diary():
                 else:
                     st.error("❌ Inserisci un nome per l'attività")
         
-        with col4:
+        with col_btn2:
             if st.button("🗑️ Cancella Tutto", use_container_width=True, key="clear_activities_btn"):
                 st.session_state.activities = []
                 st.success("✅ Tutte le attività cancellate!")
                 st.rerun()
     
+    # Mostra attività salvate
     if st.session_state.activities:
         st.sidebar.subheader("📋 Attività Salvate")
         # Ordina attività per data/ora
@@ -1107,7 +1158,7 @@ def create_comprehensive_evaluation(metrics, gender, age):
             st.write(rec)
     
     # CONCLUSIONE FINALE
-    st.subheader("🎯 Conclusioni Finales")
+    st.subheader("🎯 Conclusioni Finali")
     
     positive_count = sum(1 for eval in [sdnn_eval, rmssd_eval, coherence_eval, hr_eval] if "🟢" in eval or "🔵" in eval)
     
@@ -1189,31 +1240,39 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, se
     # 6. ANALISI SONNO (SOLO SE C'È)
     create_sleep_analysis(metrics)
     
-    # 7. BOTTONE ESPORTA PDF
+    # 7. BOTTONE ESPORTA REPORT HTML FUNZIONANTE
     st.markdown("---")
     st.header("📄 Esporta Report Completo")
     
-    if st.button("🖨️ Genera Report PDF Professionale", type="primary", use_container_width=True):
-        with st.spinner("📊 Generando report PDF..."):
-            pdf_buffer = create_professional_pdf(
-                metrics, 
-                start_datetime, 
-                end_datetime, 
-                selected_range,
-                st.session_state.user_profile,
-                st.session_state.activities
-            )
-            
-            # Crea download button
-            st.success("✅ Report PDF generato con successo!")
-            
-            st.download_button(
-                label="📥 Scarica Report PDF",
-                data=pdf_buffer,
-                file_name=f"report_hrv_{start_datetime.strftime('%Y%m%d_%H%M')}_{st.session_state.user_profile['name']}_{st.session_state.user_profile['surname']}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
+    if st.button("📊 Genera Report HTML", type="primary", use_container_width=True, key="generate_report_btn"):
+        with st.spinner("📊 Generando report HTML..."):
+            try:
+                html_report = create_html_report(
+                    metrics, 
+                    start_datetime, 
+                    end_datetime, 
+                    selected_range,
+                    st.session_state.user_profile,
+                    st.session_state.activities
+                )
+                
+                # Crea download button per HTML
+                st.success("✅ Report HTML generato con successo!")
+                
+                st.download_button(
+                    label="📥 Scarica Report HTML",
+                    data=html_report,
+                    file_name=f"report_hrv_{start_datetime.strftime('%Y%m%d_%H%M')}_{st.session_state.user_profile['name']}_{st.session_state.user_profile['surname']}.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+                
+                # Anteprima del report
+                with st.expander("👁️ Anteprima Report", expanded=True):
+                    st.components.v1.html(html_report, height=800, scrolling=True)
+                    
+            except Exception as e:
+                st.error(f"❌ Errore nella generazione del report: {e}")
     
     # 8. SALVA NELLO STORICO
     analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
@@ -1238,7 +1297,7 @@ init_session_state()
 # PROFILO UTENTE
 create_user_profile()
 
-# DIARIO ATTIVITÀ
+# DIARIO ATTIVITÀ - CON CAMPI ORE PIÙ GRANDI
 create_activity_diary()
 
 # STORICO ANALISI
@@ -1507,7 +1566,7 @@ else:
         4. **🎯 Seleziona intervallo** con date specifiche
         5. **🚀 Avvia analisi** completa
         6. **📊 Consulta storico** analisi
-        7. **📄 Esporta report PDF** professionale
+        7. **📄 Esporta report HTML** professionale
         """)
     
     with col2:
@@ -1520,8 +1579,9 @@ else:
         - 🌙 **Analisi sonno automatica**
         - ⚖️ **Interpretazioni per sesso**
         - 💡 **Raccomandazioni personalizzate**
-        - 📄 **Esportazione PDF** professionale
+        - 📄 **Esportazione HTML** funzionante
         - 📅 **Data/ora fine rilevazione** calcolata automaticamente
+        - ⏰ **Campi ore più grandi** nelle attività
         """)
 
 # FOOTER
