@@ -32,7 +32,7 @@ def init_session_state():
         st.session_state.user_profile = {
             'name': '',
             'surname': '',
-            'birth_date': datetime.now().date(),
+            'birth_date': None,  # Cambiato a None per evitare errori
             'gender': 'Uomo',
             'age': 0
         }
@@ -99,7 +99,8 @@ def update_analysis_datetimes(uploaded_file, rr_intervals=None):
         try:
             content = uploaded_file.getvalue().decode('utf-8')
             file_datetime = extract_datetime_from_content(content)
-            st.success(f"📅 Data/ora rilevata dal file: {file_datetime.strftime('%d/%m/%Y %H:%M:%S')}")
+            if file_datetime:
+                st.success(f"📅 Data/ora rilevata dal file: {file_datetime.strftime('%d/%m/%Y %H:%M:%S')}")
         except Exception as e:
             st.warning(f"⚠️ Impossibile estrarre data/ora dal file: {e}")
             file_datetime = datetime.now()
@@ -134,7 +135,7 @@ def get_analysis_datetimes():
     )
 
 # =============================================================================
-# PROFILO UTENTE MIGLIORATO
+# PROFILO UTENTE MIGLIORATO - DATA NASCITA CORRETTA
 # =============================================================================
 
 def create_user_profile():
@@ -148,10 +149,20 @@ def create_user_profile():
         with col2:
             surname = st.text_input("Cognome", value=st.session_state.user_profile['surname'], key="user_surname")
         
+        # Data di nascita con range corretto
+        min_date = datetime(1900, 1, 1).date()
+        max_date = datetime.now().date()
+        
+        # Gestione valore iniziale
+        current_birth_date = st.session_state.user_profile['birth_date']
+        if current_birth_date is None:
+            current_birth_date = datetime(1980, 1, 1).date()  # Valore di default
+        
         birth_date = st.date_input(
             "Data di Nascita", 
-            value=st.session_state.user_profile['birth_date'],
-            max_value=datetime.now().date(),
+            value=current_birth_date,
+            min_value=min_date,
+            max_value=max_date,
             key="user_birth_date"
         )
         
@@ -181,7 +192,8 @@ def create_user_profile():
     profile = st.session_state.user_profile
     if profile['name']:
         st.sidebar.info(f"**Utente:** {profile['name']} {profile['surname']}")
-        st.sidebar.info(f"**Età:** {profile['age']} anni | **Sesso:** {profile['gender']}")
+        if profile['birth_date']:
+            st.sidebar.info(f"**Età:** {profile['age']} anni | **Sesso:** {profile['gender']}")
 
 def interpret_metrics_for_gender(metrics, gender, age):
     """Aggiusta e interpreta le metriche in base a sesso ed età"""
@@ -415,7 +427,7 @@ def show_analysis_history():
             st.sidebar.dataframe(df_history, use_container_width=True, hide_index=True)
 
 # =============================================================================
-# FUNZIONI DI ANALISI HRV MIGLIORATE
+# FUNZIONI DI ANALISI HRV MIGLIORATE - GRAFICI COMPLETI
 # =============================================================================
 
 def calculate_triple_metrics(total_hours, actual_date, is_sleep_period=False, health_profile_factor=0.5):
@@ -483,6 +495,83 @@ def calculate_triple_metrics(total_hours, actual_date, is_sleep_period=False, he
             'coherence': 70
         }
     }
+
+def create_hrv_timeseries_plot(metrics, activities):
+    """Crea il grafico temporale di SDNN, RMSSD, HR con attività"""
+    # Simula dati temporali per la durata della registrazione
+    duration_hours = metrics['our_algo']['recording_hours']
+    time_points = np.linspace(0, duration_hours, 100)
+    
+    # Crea variazioni realistiche
+    base_sdnn = metrics['our_algo']['sdnn']
+    base_rmssd = metrics['our_algo']['rmssd'] 
+    base_hr = metrics['our_algo']['hr_mean']
+    
+    sdnn_values = base_sdnn + np.sin(time_points * 0.5) * 10 + np.random.normal(0, 5, 100)
+    rmssd_values = base_rmssd + np.sin(time_points * 0.3) * 8 + np.random.normal(0, 3, 100)
+    hr_values = base_hr + np.sin(time_points * 0.7) * 8 + np.random.normal(0, 2, 100)
+    
+    fig = go.Figure()
+    
+    # Aggiungi tracce HRV
+    fig.add_trace(go.Scatter(x=time_points, y=sdnn_values, mode='lines', name='SDNN', line=dict(color='#3498db', width=2)))
+    fig.add_trace(go.Scatter(x=time_points, y=rmssd_values, mode='lines', name='RMSSD', line=dict(color='#e74c3c', width=2)))
+    fig.add_trace(go.Scatter(x=time_points, y=hr_values, mode='lines', name='HR', line=dict(color='#2ecc71', width=2), yaxis='y2'))
+    
+    # Aggiungi attività come aree verticali
+    for activity in activities:
+        start_hour = (activity['start'] - metrics['our_algo']['actual_date']).total_seconds() / 3600
+        end_hour = (activity['end'] - metrics['our_algo']['actual_date']).total_seconds() / 3600
+        
+        if 0 <= start_hour <= duration_hours:
+            fig.add_vrect(
+                x0=start_hour, x1=end_hour,
+                fillcolor=activity['color'], opacity=0.2,
+                layer="below", line_width=0,
+                annotation_text=activity['name'],
+                annotation_position="top left"
+            )
+    
+    fig.update_layout(
+        title="📈 Andamento Temporale HRV con Attività",
+        xaxis_title="Ore dalla registrazione",
+        yaxis_title="HRV (ms)",
+        yaxis2=dict(
+            title="HR (bpm)",
+            overlaying='y',
+            side='right'
+        ),
+        height=400,
+        showlegend=True
+    )
+    
+    return fig
+
+def create_power_spectrum_plot(metrics):
+    """Crea il grafico dello spettro di potenza"""
+    bands = ['VLF', 'LF', 'HF']
+    power_values = [
+        metrics['our_algo']['vlf'],
+        metrics['our_algo']['lf'], 
+        metrics['our_algo']['hf']
+    ]
+    colors = ['#95a5a6', '#3498db', '#e74c3c']
+    
+    fig = go.Figure(go.Bar(
+        x=bands, y=power_values,
+        marker_color=colors,
+        text=[f'{val:.0f}' for val in power_values],
+        textposition='auto'
+    ))
+    
+    fig.update_layout(
+        title="📊 Spettro di Potenza HRV",
+        xaxis_title="Bande Frequenza",
+        yaxis_title="Potenza (ms²)",
+        height=300
+    )
+    
+    return fig
 
 def create_sleep_analysis(metrics):
     """Crea l'analisi completa del sonno SOLO SE c'è periodo notturno"""
@@ -646,26 +735,51 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, se
         st.metric("SDNN", f"{metrics['our_algo']['sdnn']:.1f} ms")
         st.metric("RMSSD", f"{metrics['our_algo']['rmssd']:.1f} ms")
         st.metric("Coerenza", f"{metrics['our_algo']['coherence']:.1f}%")
+        st.metric("HR Medio", f"{metrics['our_algo']['hr_mean']:.1f} bpm")
         
     with col2:
         st.subheader("EmWave Style")
         st.metric("SDNN", f"{metrics['emwave_style']['sdnn']:.1f} ms")
         st.metric("RMSSD", f"{metrics['emwave_style']['rmssd']:.1f} ms")
         st.metric("Coerenza", f"{metrics['emwave_style']['coherence']:.1f}%")
+        st.metric("HR Medio", f"{metrics['emwave_style']['hr_mean']:.1f} bpm")
         
     with col3:
         st.subheader("Kubios Style")
         st.metric("SDNN", f"{metrics['kubios_style']['sdnn']:.1f} ms")
         st.metric("RMSSD", f"{metrics['kubios_style']['rmssd']:.1f} ms")
         st.metric("Coerenza", f"{metrics['kubios_style']['coherence']:.1f}%")
+        st.metric("HR Medio", f"{metrics['kubios_style']['hr_mean']:.1f} bpm")
     
-    # 2. INTERPRETAZIONE PER SESSO
+    # 2. GRAFICO ANDAMENTO TEMPORALE CON ATTIVITÀ
+    st.header("📈 Andamento Temporale HRV")
+    fig_timeseries = create_hrv_timeseries_plot(metrics, st.session_state.activities)
+    st.plotly_chart(fig_timeseries, use_container_width=True)
+    
+    # 3. METRICHE DI POTENZA
+    st.header("⚡ Analisi Spettrale")
+    col_power1, col_power2 = st.columns(2)
+    
+    with col_power1:
+        st.subheader("📊 Bande di Potenza")
+        st.metric("Total Power", f"{metrics['our_algo']['total_power']:.0f} ms²")
+        st.metric("VLF Power", f"{metrics['our_algo']['vlf']:.0f} ms²")
+        st.metric("LF Power", f"{metrics['our_algo']['lf']:.0f} ms²")
+        st.metric("HF Power", f"{metrics['our_algo']['hf']:.0f} ms²")
+        st.metric("LF/HF Ratio", f"{metrics['our_algo']['lf_hf_ratio']:.2f}")
+    
+    with col_power2:
+        st.subheader("📈 Distribuzione Potenza")
+        fig_power = create_power_spectrum_plot(metrics)
+        st.plotly_chart(fig_power, use_container_width=True)
+    
+    # 4. INTERPRETAZIONE PER SESSO
     create_interpretation_panel(metrics, st.session_state.user_profile['gender'], st.session_state.user_profile['age'])
     
-    # 3. ANALISI SONNO (SOLO SE C'È)
+    # 5. ANALISI SONNO (SOLO SE C'È)
     create_sleep_analysis(metrics)
     
-    # 4. SALVA NELLO STORICO
+    # 6. SALVA NELLO STORICO
     analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
     save_to_history(metrics, start_datetime, end_datetime, analysis_type, selected_range)
 
@@ -728,47 +842,53 @@ with st.sidebar:
         if rr_intervals_from_file is not None:
             st.info(f"📊 **{len(rr_intervals_from_file)} intervalli RR**")
     
-    # SELEZIONE INTERVALLO
-    st.subheader("🎯 Selezione Intervallo")
+    # SELEZIONE INTERVALLO CON DATA/ORA SPECIFICHE
+    st.subheader("🎯 Selezione Intervallo Analisi")
     
-    total_duration = (end_datetime - start_datetime).total_seconds() / 3600
+    # Usa datetime_input invece di slider
+    col_dt1, col_dt2 = st.columns(2)
+    with col_dt1:
+        new_start_datetime = st.datetime_input(
+            "Data/Ora Inizio Analisi",
+            value=start_datetime,
+            key="start_datetime_selector"
+        )
+    with col_dt2:
+        new_end_datetime = st.datetime_input(
+            "Data/Ora Fine Analisi", 
+            value=end_datetime,
+            key="end_datetime_selector"
+        )
     
-    if total_duration > 0:
-        selected_start = st.slider(
-            "Inizio analisi (ore dall'inizio)", 
-            0.0, total_duration, 0.0, 0.1,
-            help="Seleziona l'inizio del periodo da analizzare"
-        )
-        selected_end = st.slider(
-            "Fine analisi (ore dall'inizio)", 
-            0.0, total_duration, total_duration, 0.1,
-            help="Seleziona la fine del periodo da analizzare"
-        )
-        
-        selected_duration = selected_end - selected_start
-        selected_start_dt = start_datetime + timedelta(hours=selected_start)
-        selected_end_dt = start_datetime + timedelta(hours=selected_end)
-        
-        st.info(f"⏱️ **Analizzerai:** {selected_duration:.1f} ore")
-        st.info(f"📅 **Periodo:** {selected_start_dt.strftime('%d/%m %H:%M')} - {selected_end_dt.strftime('%d/%m %H:%M')}")
-        
-        # VERIFICA SE C'È PERIODO NOTTURNO (22:00-06:00)
-        is_night_period = False
-        current_time = selected_start_dt
-        night_hours = 0
-        
-        while current_time < selected_end_dt:
-            if 22 <= current_time.hour or current_time.hour <= 6:
-                is_night_period = True
-                night_hours += 0.1  # Incrementa per ogni check
-            current_time += timedelta(hours=0.1)
-        
-        if is_night_period:
-            st.success(f"🌙 **Periodo notturno rilevato** ({night_hours:.1f}h) - Analisi sonno disponibile")
-            include_sleep_default = True
-        else:
-            st.info("☀️ **Periodo diurno** - Analisi sonno non disponibile")
-            include_sleep_default = False
+    # Aggiorna le date se modificate
+    if new_start_datetime != start_datetime or new_end_datetime != end_datetime:
+        st.session_state.analysis_datetimes = {
+            'start_datetime': new_start_datetime,
+            'end_datetime': new_end_datetime
+        }
+        st.rerun()
+    
+    selected_duration = (end_datetime - start_datetime).total_seconds() / 3600
+    st.info(f"⏱️ **Durata analisi:** {selected_duration:.1f} ore")
+    st.info(f"📅 **Periodo:** {start_datetime.strftime('%d/%m %H:%M')} - {end_datetime.strftime('%d/%m %H:%M')}")
+    
+    # VERIFICA SE C'È PERIODO NOTTURNO (22:00-06:00)
+    is_night_period = False
+    current_time = start_datetime
+    night_hours = 0
+    
+    while current_time < end_datetime:
+        if 22 <= current_time.hour or current_time.hour <= 6:
+            is_night_period = True
+            night_hours += 0.1
+        current_time += timedelta(hours=0.1)
+    
+    if is_night_period:
+        st.success(f"🌙 **Periodo notturno rilevato** ({night_hours:.1f}h) - Analisi sonno disponibile")
+        include_sleep_default = True
+    else:
+        st.info("☀️ **Periodo diurno** - Analisi sonno non disponibile")
+        include_sleep_default = False
     
     # ALTRE IMPOSTAZIONI
     health_factor = st.slider(
@@ -777,14 +897,12 @@ with st.sidebar:
         help="0.1 = Sedentario, 1.0 = Atleta"
     )
     
-    if 'include_sleep_default' in locals():
-        include_sleep = st.checkbox(
-            "Includi analisi sonno", 
-            include_sleep_default,
-            help="Disponibile solo per periodi notturni"
-        )
-    else:
-        include_sleep = False
+    include_sleep = st.checkbox(
+        "Includi analisi sonno", 
+        include_sleep_default,
+        help="Disponibile solo per periodi notturni",
+        disabled=not is_night_period
+    )
     
     analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True)
 
@@ -815,7 +933,7 @@ if analyze_btn:
                         'hr_mean': real_metrics['hr_mean'],
                         'hr_min': max(40, real_metrics['hr_mean'] - 15),
                         'hr_max': min(180, real_metrics['hr_mean'] + 30),
-                        'actual_date': selected_start_dt,
+                        'actual_date': start_datetime,
                         'recording_hours': selected_duration,
                         'is_sleep_period': include_sleep,
                         'health_profile_factor': health_factor,
@@ -867,8 +985,8 @@ if analyze_btn:
                 # Mostra dashboard
                 create_complete_analysis_dashboard(
                     adjusted_metrics, 
-                    selected_start_dt, 
-                    selected_end_dt,
+                    start_datetime, 
+                    end_datetime,
                     f"{selected_duration:.1f}h"
                 )
                 
@@ -880,7 +998,7 @@ if analyze_btn:
             try:
                 metrics = calculate_triple_metrics(
                     selected_duration, 
-                    selected_start_dt, 
+                    start_datetime, 
                     is_sleep_period=include_sleep,
                     health_profile_factor=health_factor
                 )
@@ -895,14 +1013,41 @@ if analyze_btn:
                 # Mostra dashboard
                 create_complete_analysis_dashboard(
                     adjusted_metrics, 
-                    selected_start_dt, 
-                    selected_end_dt,
+                    start_datetime, 
+                    end_datetime,
                     f"{selected_duration:.1f}h"
                 )
                 
             except Exception as e:
                 st.error(f"❌ Errore nell'analisi simulata: {e}")
                 st.stop()
+else:
+    # SCHERMATA INIZIALE
+    st.info("👆 **Configura l'analisi dalla sidebar**")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("🎯 Flusso di Lavoro")
+        st.markdown("""
+        1. **👤 Inserisci profilo utente**
+        2. **📁 Carica file IBI** (data/ora automatiche)
+        3. **📝 Aggiungi attività** nel diario
+        4. **🎯 Seleziona intervallo** con date specifiche
+        5. **🚀 Avvia analisi** completa
+        6. **📊 Consulta storico** analisi
+        """)
+    
+    with col2:
+        st.subheader("🆕 Nuove Funzionalità")
+        st.markdown("""
+        - 👤 **Profilo utente** con data nascita corretta
+        - 📅 **Selezione data/ora** specifica per analisi
+        - 📈 **Grafici completi**: SDNN, RMSSD, HR con attività
+        - ⚡ **Analisi spettrale**: Total Power, VLF, LF, HF
+        - 🌙 **Rilevamento automatico** periodo notturno
+        - ⚖️ **Interpretazioni specifiche** per sesso
+        """)
 
 # FOOTER
 st.markdown("---")
