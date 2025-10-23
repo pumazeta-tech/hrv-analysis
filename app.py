@@ -76,6 +76,120 @@ def calculate_hrv_metrics_from_rr(rr_intervals):
     }
 
 # =============================================================================
+# STORICO ANALISI
+# =============================================================================
+
+def init_session_state():
+    """Inizializza lo stato della sessione"""
+    if 'activities' not in st.session_state:
+        st.session_state.activities = []
+    if 'analysis_history' not in st.session_state:
+        st.session_state.analysis_history = []
+    if 'current_analysis' not in st.session_state:
+        st.session_state.current_analysis = None
+
+def save_to_history(metrics, start_datetime, end_datetime, analysis_type):
+    """Salva l'analisi corrente nello storico"""
+    analysis_data = {
+        'timestamp': datetime.now(),
+        'start_datetime': start_datetime,
+        'end_datetime': end_datetime,
+        'analysis_type': analysis_type,
+        'metrics': {
+            'sdnn': metrics['our_algo']['sdnn'],
+            'rmssd': metrics['our_algo']['rmssd'],
+            'hr_mean': metrics['our_algo']['hr_mean'],
+            'coherence': metrics['our_algo']['coherence'],
+            'recording_hours': metrics['our_algo']['recording_hours']
+        }
+    }
+    st.session_state.analysis_history.append(analysis_data)
+    # Mantieni solo le ultime 50 analisi
+    if len(st.session_state.analysis_history) > 50:
+        st.session_state.analysis_history = st.session_state.analysis_history[-50:]
+
+def show_analysis_history():
+    """Mostra lo storico delle analisi"""
+    if st.session_state.analysis_history:
+        st.sidebar.header("📊 Storico Analisi")
+        
+        # Crea dataframe per la tabella
+        history_data = []
+        for i, analysis in enumerate(reversed(st.session_state.analysis_history[-10:])):  # Ultime 10
+            history_data.append({
+                'Data': analysis['start_datetime'].strftime('%d/%m %H:%M'),
+                'Durata': f"{analysis['metrics']['recording_hours']:.1f}h",
+                'SDNN': f"{analysis['metrics']['sdnn']:.1f}",
+                'RMSSD': f"{analysis['metrics']['rmssd']:.1f}",
+                'HR': f"{analysis['metrics']['hr_mean']:.1f}"
+            })
+        
+        df_history = pd.DataFrame(history_data)
+        st.sidebar.dataframe(df_history, use_container_width=True, hide_index=True)
+        
+        # Pulsante per vedere tutto lo storico
+        if st.sidebar.button("📈 Vedi Grafico Storico", use_container_width=True):
+            show_history_chart()
+
+def show_history_chart():
+    """Mostra il grafico dello storico"""
+    if len(st.session_state.analysis_history) > 1:
+        st.header("📈 Storico Analisi HRV")
+        
+        dates = [analysis['start_datetime'] for analysis in st.session_state.analysis_history]
+        sdnn_values = [analysis['metrics']['sdnn'] for analysis in st.session_state.analysis_history]
+        rmssd_values = [analysis['metrics']['rmssd'] for analysis in st.session_state.analysis_history]
+        hr_values = [analysis['metrics']['hr_mean'] for analysis in st.session_state.analysis_history]
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=dates, y=sdnn_values,
+            mode='lines+markers',
+            name='SDNN',
+            line=dict(color='#e74c3c', width=3)
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=dates, y=rmssd_values,
+            mode='lines+markers',
+            name='RMSSD',
+            line=dict(color='#3498db', width=3)
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=dates, y=hr_values,
+            mode='lines+markers',
+            name='HR Medio',
+            line=dict(color='#2ecc71', width=2),
+            yaxis='y2'
+        ))
+        
+        fig.update_layout(
+            title="Andamento Storico Metriche HRV",
+            xaxis_title="Data",
+            yaxis_title="Variabilità (ms)",
+            yaxis2=dict(
+                title='Frequenza Cardiaca (bpm)',
+                overlaying='y',
+                side='right'
+            ),
+            template='plotly_white',
+            height=500
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Statistiche
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("SDNN Medio", f"{np.mean(sdnn_values):.1f} ms")
+        with col2:
+            st.metric("RMSSD Medio", f"{np.mean(rmssd_values):.1f} ms")
+        with col3:
+            st.metric("HR Medio", f"{np.mean(hr_values):.1f} bpm")
+
+# =============================================================================
 # DIARIO ATTIVITÀ COMPLETO
 # =============================================================================
 
@@ -83,17 +197,13 @@ def create_activity_diary():
     """Crea un diario delle attività con orari specifici"""
     st.sidebar.header("📝 Diario Attività")
     
-    # Inizializza session state per attività
-    if 'activities' not in st.session_state:
-        st.session_state.activities = []
-    
     with st.sidebar.expander("➕ Aggiungi Attività", expanded=False):
         # Data e nome attività (TESTO LIBERO)
         col1, col2 = st.columns(2)
         with col1:
             activity_date = st.date_input("Data attività", datetime.now(), key="activity_date")
         with col2:
-            activity_name = st.text_input("Nome attività*", placeholder="Scrivi qui... es: Caffè, Riunione, Pausa", key="activity_name")
+            activity_name = st.text_input("Nome attività*", placeholder="Scrivi qui...", key="activity_name")
         
         # Orario inizio e fine (DALLE ORE ALLE ORE)
         st.write("**Orario attività:**")
@@ -106,9 +216,6 @@ def create_activity_diary():
         # Colore personalizzato
         activity_color = st.color_picker("Colore attività", "#3498db", key="activity_color")
         
-        # Note opzionali
-        activity_note = st.text_input("Note (opzionale)", placeholder="Descrizione...", key="activity_note")
-        
         # Pulsanti salva e cancella
         col5, col6 = st.columns(2)
         with col5:
@@ -118,7 +225,6 @@ def create_activity_diary():
                     start_datetime = datetime.combine(activity_date, start_time)
                     end_datetime = datetime.combine(activity_date, end_time)
                     
-                    # Verifica che l'orario di fine sia dopo l'orario di inizio
                     if end_datetime <= start_datetime:
                         st.error("❌ L'orario di fine deve essere successivo all'orario di inizio")
                     else:
@@ -126,8 +232,7 @@ def create_activity_diary():
                             'name': activity_name.strip(),
                             'start': start_datetime,
                             'end': end_datetime,
-                            'color': activity_color,
-                            'note': activity_note
+                            'color': activity_color
                         }
                         st.session_state.activities.append(activity)
                         st.success("✅ Attività salvata!")
@@ -147,15 +252,13 @@ def create_activity_diary():
                 st.write(f"**Data:** {activity['start'].strftime('%d/%m/%Y')}")
                 st.write(f"**Orario:** {activity['start'].strftime('%H:%M')} - {activity['end'].strftime('%H:%M')}")
                 st.write(f"**Colore:** {activity['color']}")
-                if activity['note']:
-                    st.write(f"**Note:** {activity['note']}")
                 
                 if st.button(f"❌ Elimina", key=f"delete_activity_{i}"):
                     st.session_state.activities.pop(i)
                     st.rerun()
 
 # =============================================================================
-# FUNZIONE PRINCIPALE DI ANALISI - VERSIONE COMPLETA ORIGINALE
+# FUNZIONE PRINCIPALE DI ANALISI
 # =============================================================================
 
 def calculate_triple_metrics(total_hours, actual_date, is_sleep_period=False, health_profile_factor=0.5):
@@ -329,15 +432,16 @@ def create_timeline_plot_with_activities(time_labels, sdnn_data, rmssd_data, hr_
                     fig.add_vrect(
                         x0=activity_start, x1=activity_end,
                         fillcolor=activity['color'], 
-                        opacity=0.3,  # Sfondo colorato trasparente
+                        opacity=0.3,
                         line_width=2, 
                         line_color=activity['color'],
                         annotation_text=activity['name'],
                         annotation_position="top left",
                         annotation=dict(
-                            font_size=12, 
+                            font_size=10, 
                             font_color=activity['color'],
-                            font_family="Arial"
+                            textangle=-90,  # TESTO VERTICALE
+                            yanchor='bottom'
                         )
                     )
     
@@ -367,14 +471,7 @@ def create_timeline_plot_with_activities(time_labels, sdnn_data, rmssd_data, hr_
         ),
         template='plotly_white',
         height=500,
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
+        showlegend=True
     )
     
     return fig
@@ -509,7 +606,7 @@ def create_frequency_analysis(metrics):
         
         st.plotly_chart(fig_total, use_container_width=True)
 
-def create_complete_analysis_dashboard(metrics, start_datetime):
+def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime):
     """Crea un dashboard COMPLETO con TUTTE le funzioni"""
     
     # 1. METRICHE PRINCIPALI
@@ -641,6 +738,10 @@ def create_complete_analysis_dashboard(metrics, start_datetime):
     
     # 8. ANALISI SONNO (SOLO SE C'È)
     create_sleep_analysis(metrics)
+    
+    # 9. SALVA NELLO STORICO
+    analysis_type = "File IBI" if st.session_state.get('file_uploaded', False) else "Simulata"
+    save_to_history(metrics, start_datetime, end_datetime, analysis_type)
 
 # =============================================================================
 # INTERFACCIA STREAMLIT PRINCIPALE
@@ -653,10 +754,16 @@ st.set_page_config(
 )
 
 st.title("🏥 HRV ANALYTICS ULTIMATE")
-st.markdown("### **Piattaforma Completa** - Analisi HRV con Diario Attività")
+st.markdown("### **Piattaforma Completa** - Analisi HRV con Storico e Diario")
+
+# INIZIALIZZA SESSION STATE
+init_session_state()
 
 # DIARIO ATTIVITÀ (sempre visibile)
 create_activity_diary()
+
+# STORICO ANALISI (sempre visibile)
+show_analysis_history()
 
 # Sidebar configurazione
 with st.sidebar:
@@ -669,15 +776,17 @@ with st.sidebar:
         key="file_uploader"
     )
     
-    # SE IL FILE È CARICATO, IMPOSTA AUTOMATICAMENTE DATA/ORA
+    # IMPOSTA DATA/ORA INIZIO E FINE BASATE SUL FILE O SU VALORI DI DEFAULT
     if uploaded_file is not None:
-        # Usa data/ora attuale per la registrazione
-        default_start = datetime.now()
-        default_end = default_start + timedelta(hours=24)
+        # Se c'è un file, imposta data/ora inizio a ora corrente, fine a +24 ore
+        file_start = datetime.now()
+        file_end = file_start + timedelta(hours=24)
+        st.session_state.file_uploaded = True
     else:
         # Valori di default per analisi simulata
-        default_start = datetime.now()
-        default_end = default_start + timedelta(hours=24)
+        file_start = datetime.now()
+        file_end = file_start + timedelta(hours=24)
+        st.session_state.file_uploaded = False
     
     st.markdown("---")
     st.header("⚙️ Impostazioni Analisi")
@@ -687,15 +796,15 @@ with st.sidebar:
     
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input("Data inizio", default_start.date(), key="analysis_start_date")
+        start_date = st.date_input("Data inizio", file_start.date(), key="analysis_start_date")
     with col2:
-        start_time = st.time_input("Ora inizio", default_start.time(), key="analysis_start_time")
+        start_time = st.time_input("Ora inizio", file_start.time(), key="analysis_start_time")
     
     col3, col4 = st.columns(2)
     with col3:
-        end_date = st.date_input("Data fine", default_end.date(), key="analysis_end_date")
+        end_date = st.date_input("Data fine", file_end.date(), key="analysis_end_date")
     with col4:
-        end_time = st.time_input("Ora fine", default_end.time(), key="analysis_end_time")
+        end_time = st.time_input("Ora fine", file_end.time(), key="analysis_end_time")
     
     # Calcola durata automaticamente
     start_datetime = datetime.combine(start_date, start_time)
@@ -709,7 +818,7 @@ with st.sidebar:
         st.info(f"⏱️ **Durata registrazione:** {recording_hours:.1f} ore")
         st.info(f"📅 **Periodo:** {start_datetime.strftime('%d/%m %H:%M')} → {end_datetime.strftime('%d/%m %H:%M')}")
     
-    # Determina se è periodo notturno
+    # Determina se è periodo notturno (22:00-06:00)
     is_night_period = (start_datetime.hour >= 22 or start_datetime.hour <= 6) and recording_hours >= 6
     
     # Altre impostazioni
@@ -720,7 +829,7 @@ with st.sidebar:
     )
     
     include_sleep = st.checkbox("Includi analisi sonno", is_night_period, 
-                               help="Automaticamente attivo per periodi notturni")
+                               help="Automaticamente attivo per periodi notturni (22:00-06:00)")
     
     analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True)
 
@@ -782,7 +891,7 @@ if analyze_btn:
                         }
                     }
                     
-                    create_complete_analysis_dashboard(metrics, start_datetime)
+                    create_complete_analysis_dashboard(metrics, start_datetime, end_datetime)
                     
             except Exception as e:
                 st.error(f"❌ Errore nel processare il file: {e}")
@@ -798,7 +907,7 @@ if analyze_btn:
             
             st.success("✅ **ANALISI SIMULATA COMPLETATA!**")
             st.info(f"📊 **Tutti i dati si riferiscono al periodo:** {start_datetime.strftime('%d/%m %H:%M')} - {end_datetime.strftime('%d/%m %H:%M')}")
-            create_complete_analysis_dashboard(metrics, start_datetime)
+            create_complete_analysis_dashboard(metrics, start_datetime, end_datetime)
 
 else:
     # Schermata iniziale
@@ -813,16 +922,15 @@ else:
         - CSV, TXT, Excel
         - Colonne: RR, IBI, Interval
         - Valori in ms
-        
-        **⚠️ Attenzione:** I dati saranno analizzati solo nel periodo selezionato!
         """)
         
-        st.subheader("🆕 Diario Attività")
+        st.subheader("🆕 Nuove Funzionalità")
         st.markdown("""
-        - ✏️ **Scrivi attività libere**
-        - 📅 **Scegli data e orario**
-        - 🎨 **Colori personalizzabili**
-        - ⏰ **Timeline integrata**
+        - ✏️ **Diario attività libere**
+        - 📊 **Storico analisi online**
+        - 📈 **Grafico andamento storico**
+        - 🎯 **Etichette attività verticali**
+        - 😴 **Sonno solo se notte**
         """)
     
     with col2:
@@ -831,11 +939,12 @@ else:
         - ✅ 3 algoritmi comparati
         - 📊 Metriche temporali e frequenziali
         - 🔄 Poincaré Plot
-        - 😴 Analisi sonno (solo se notte)
+        - 😴 Analisi sonno intelligente
         - ⏰ Timeline con attività
         - 🎯 Valutazione clinica
+        - 📈 Storico progressi
         """)
 
 # Footer
 st.markdown("---")
-st.markdown("**HRV Analytics ULTIMATE** - Creato da Roberto con ❤️")
+st.markdown("**HRV Analytics ULTIMATE** - Creato da Roberto con ❤️ | Storico mantenuto durante la sessione")
