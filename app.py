@@ -11,6 +11,24 @@ import base64
 from matplotlib.patches import Ellipse
 
 # =============================================================================
+# INIZIALIZZAZIONE SESSION STATE
+# =============================================================================
+
+def init_session_state():
+    """Inizializza lo stato della sessione"""
+    if 'activities' not in st.session_state:
+        st.session_state.activities = []
+    if 'analysis_history' not in st.session_state:
+        st.session_state.analysis_history = []
+    if 'file_uploaded' not in st.session_state:
+        st.session_state.file_uploaded = False
+    if 'analysis_datetimes' not in st.session_state:
+        st.session_state.analysis_datetimes = {
+            'start_datetime': datetime.now(),
+            'end_datetime': datetime.now() + timedelta(hours=24)
+        }
+
+# =============================================================================
 # FUNZIONI PER CARICAMENTO FILE IBI - VERSIONE VELOCE
 # =============================================================================
 
@@ -76,17 +94,34 @@ def calculate_hrv_metrics_from_rr(rr_intervals):
     }
 
 # =============================================================================
-# STORICO ANALISI
+# GESTIONE DATA/ORA AUTOMATICA
 # =============================================================================
 
-def init_session_state():
-    """Inizializza lo stato della sessione"""
-    if 'activities' not in st.session_state:
-        st.session_state.activities = []
-    if 'analysis_history' not in st.session_state:
-        st.session_state.analysis_history = []
-    if 'current_analysis' not in st.session_state:
-        st.session_state.current_analysis = None
+def update_analysis_datetimes(uploaded_file):
+    """Aggiorna automaticamente data/ora quando viene caricato un file"""
+    if uploaded_file is not None and not st.session_state.file_uploaded:
+        # Imposta data/ora inizio a ora corrente
+        start_dt = datetime.now()
+        # Calcola data/ora fine basata sulla durata del file (se disponibile)
+        end_dt = start_dt + timedelta(hours=24)  # Default 24 ore
+        
+        st.session_state.analysis_datetimes = {
+            'start_datetime': start_dt,
+            'end_datetime': end_dt
+        }
+        st.session_state.file_uploaded = True
+        st.rerun()  # Forza il rerun per aggiornare l'interfaccia
+
+def get_analysis_datetimes():
+    """Restituisce data/ora inizio e fine per l'analisi"""
+    return (
+        st.session_state.analysis_datetimes['start_datetime'],
+        st.session_state.analysis_datetimes['end_datetime']
+    )
+
+# =============================================================================
+# STORICO ANALISI
+# =============================================================================
 
 def save_to_history(metrics, start_datetime, end_datetime, analysis_type):
     """Salva l'analisi corrente nello storico"""
@@ -740,7 +775,7 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime):
     create_sleep_analysis(metrics)
     
     # 9. SALVA NELLO STORICO
-    analysis_type = "File IBI" if st.session_state.get('file_uploaded', False) else "Simulata"
+    analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
     save_to_history(metrics, start_datetime, end_datetime, analysis_type)
 
 # =============================================================================
@@ -776,17 +811,11 @@ with st.sidebar:
         key="file_uploader"
     )
     
-    # IMPOSTA DATA/ORA INIZIO E FINE BASATE SUL FILE O SU VALORI DI DEFAULT
-    if uploaded_file is not None:
-        # Se c'è un file, imposta data/ora inizio a ora corrente, fine a +24 ore
-        file_start = datetime.now()
-        file_end = file_start + timedelta(hours=24)
-        st.session_state.file_uploaded = True
-    else:
-        # Valori di default per analisi simulata
-        file_start = datetime.now()
-        file_end = file_start + timedelta(hours=24)
-        st.session_state.file_uploaded = False
+    # AGGIORNA AUTOMATICAMENTE DATA/ORA QUANDO SI CARICA UN FILE
+    update_analysis_datetimes(uploaded_file)
+    
+    # OTTIENI DATA/ORA CORRENTI DAL SESSION STATE
+    start_datetime, end_datetime = get_analysis_datetimes()
     
     st.markdown("---")
     st.header("⚙️ Impostazioni Analisi")
@@ -796,15 +825,15 @@ with st.sidebar:
     
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input("Data inizio", file_start.date(), key="analysis_start_date")
+        start_date = st.date_input("Data inizio", start_datetime.date(), key="analysis_start_date")
     with col2:
-        start_time = st.time_input("Ora inizio", file_start.time(), key="analysis_start_time")
+        start_time = st.time_input("Ora inizio", start_datetime.time(), key="analysis_start_time")
     
     col3, col4 = st.columns(2)
     with col3:
-        end_date = st.date_input("Data fine", file_end.date(), key="analysis_end_date")
+        end_date = st.date_input("Data fine", end_datetime.date(), key="analysis_end_date")
     with col4:
-        end_time = st.time_input("Ora fine", file_end.time(), key="analysis_end_time")
+        end_time = st.time_input("Ora fine", end_datetime.time(), key="analysis_end_time")
     
     # Calcola durata automaticamente
     start_datetime = datetime.combine(start_date, start_time)
@@ -922,6 +951,8 @@ else:
         - CSV, TXT, Excel
         - Colonne: RR, IBI, Interval
         - Valori in ms
+        
+        **🔄 Automatico:** Data/ora si aggiornano al caricamento!
         """)
         
         st.subheader("🆕 Nuove Funzionalità")
@@ -931,6 +962,7 @@ else:
         - 📈 **Grafico andamento storico**
         - 🎯 **Etichette attività verticali**
         - 😴 **Sonno solo se notte**
+        - 🔄 **Data/ora automatiche**
         """)
     
     with col2:
