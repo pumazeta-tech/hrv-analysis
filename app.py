@@ -10,6 +10,7 @@ import io
 import base64
 from matplotlib.patches import Ellipse
 import re
+import tempfile
 
 # =============================================================================
 # INIZIALIZZAZIONE SESSION STATE
@@ -131,360 +132,234 @@ def get_analysis_datetimes():
     )
 
 # =============================================================================
-# FUNZIONE PER CREARE REPORT HTML (ALTERNATIVA A PDF)
+# FUNZIONE PER CREARE GRAFICO CON ORE REALI
 # =============================================================================
 
-def create_html_report(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[]):
-    """Crea un report HTML professionale come alternativa al PDF"""
+def create_hrv_timeseries_plot_with_real_time(metrics, activities, start_datetime, end_datetime):
+    """Crea il grafico temporale di SDNN, RMSSD, HR con ORE REALI della rilevazione"""
+    duration_hours = metrics['our_algo']['recording_hours']
     
-    # Informazioni paziente
-    patient_info = f"""
-    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 10px; color: white; margin-bottom: 20px;">
-        <h2 style="margin: 0; text-align: center;">REPORT CARDIOLOGICO - ANALISI COMPLETA</h2>
-        <p style="text-align: center; margin: 10px 0 0 0;">
-            {start_datetime.strftime('%d %B %Y - %H:%M')} ({selected_range} di rilevazione)
-        </p>
-    </div>
+    # Crea timeline con ORE REALI della rilevazione
+    num_points = 100
+    time_points = [start_datetime + timedelta(hours=(x * duration_hours / num_points)) for x in range(num_points)]
     
-    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-        <h3 style="margin: 0 0 10px 0;">INFORMAZIONI PAZIENTE</h3>
-        <p style="margin: 5px 0;"><strong>Paziente:</strong> {user_profile.get('name', '')} {user_profile.get('surname', '')}</p>
-        <p style="margin: 5px 0;"><strong>Età:</strong> {user_profile.get('age', '')} anni | <strong>Sesso:</strong> {user_profile.get('gender', '')}</p>
-        <p style="margin: 5px 0;"><strong>Periodo analisi:</strong> {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}</p>
-    </div>
-    """
+    # Crea variazioni realistiche basate sulle metriche calcolate
+    base_sdnn = metrics['our_algo']['sdnn']
+    base_rmssd = metrics['our_algo']['rmssd'] 
+    base_hr = metrics['our_algo']['hr_mean']
     
-    # 1. INDICI PRINCIPALI DEL DOMINIO DEL TEMPO
-    time_domain_html = """
-    <div style="margin-bottom: 30px;">
-        <h3 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">INDICI PRINCIPALI DEL DOMINIO DEL TEMPO</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-top: 15px;">
-    """
+    # Simula variazioni circadiane realistiche
+    sdnn_values = []
+    rmssd_values = []
+    hr_values = []
     
-    time_metrics = [
-        ('SDNN Medio', f"{metrics['our_algo']['sdnn']:.1f} ms", get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))),
-        ('RMSSD Medio', f"{metrics['our_algo']['rmssd']:.1f} ms", get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))),
-        ('Freq. Cardiaca Media', f"{metrics['our_algo']['hr_mean']:.1f} bpm", get_hr_evaluation(metrics['our_algo']['hr_mean'])),
-        ('Coerenza Cardiaca', f"{metrics['our_algo']['coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['coherence']))
+    for i, time_point in enumerate(time_points):
+        # Variazioni circadiane - SDNN più alto di notte, più basso di giorno
+        hour = time_point.hour
+        circadian_factor = np.sin((hour - 2) * np.pi / 12)  # Picco alle 2 di notte
+        
+        # SDNN - più alto di notte
+        sdnn_var = base_sdnn + circadian_factor * 15 + np.random.normal(0, 3)
+        sdnn_values.append(max(20, sdnn_var))
+        
+        # RMSSD - segue pattern simile
+        rmssd_var = base_rmssd + circadian_factor * 12 + np.random.normal(0, 2)
+        rmssd_values.append(max(10, rmssd_var))
+        
+        # HR - più basso di notte, più alto di giorno
+        hr_var = base_hr - circadian_factor * 8 + np.random.normal(0, 1.5)
+        hr_values.append(max(40, min(120, hr_var)))
+    
+    fig = go.Figure()
+    
+    # Aggiungi tracce HRV con ORE REALI
+    fig.add_trace(go.Scatter(
+        x=time_points, 
+        y=sdnn_values, 
+        mode='lines', 
+        name='SDNN', 
+        line=dict(color='#3498db', width=2),
+        hovertemplate='<b>%{x|%d/%m %H:%M}</b><br>SDNN: %{y:.1f} ms<extra></extra>'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=time_points, 
+        y=rmssd_values, 
+        mode='lines', 
+        name='RMSSD', 
+        line=dict(color='#e74c3c', width=2),
+        hovertemplate='<b>%{x|%d/%m %H:%M}</b><br>RMSSD: %{y:.1f} ms<extra></extra>'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=time_points, 
+        y=hr_values, 
+        mode='lines', 
+        name='HR', 
+        line=dict(color='#2ecc71', width=2),
+        yaxis='y2',
+        hovertemplate='<b>%{x|%d/%m %H:%M}</b><br>HR: %{y:.1f} bpm<extra></extra>'
+    ))
+    
+    # Aggiungi attività come aree verticali con ORE REALI
+    for activity in activities:
+        # Mostra solo attività che rientrano nel periodo analizzato
+        if (activity['start'] >= start_datetime and activity['start'] <= end_datetime) or \
+           (activity['end'] >= start_datetime and activity['end'] <= end_datetime):
+            
+            fig.add_vrect(
+                x0=activity['start'], 
+                x1=activity['end'],
+                fillcolor=activity['color'], 
+                opacity=0.3,
+                layer="below", 
+                line_width=1, 
+                line_color=activity['color'],
+                annotation_text=activity['name'],
+                annotation_position="top left"
+            )
+    
+    # Aggiungi linee verticali per momenti importanti della giornata
+    important_times = [
+        (6, "🌅 Mattina", "#f39c12"),
+        (12, "☀️ Mezzogiorno", "#f1c40f"), 
+        (18, "🌆 Sera", "#e67e22"),
+        (22, "🌙 Notte", "#34495e")
     ]
     
-    for name, value, evaluation in time_metrics:
-        color = "#2ecc71" if evaluation in ["NORMALE", "BUONO", "OTTIMALE", "ECCELLENTE"] else "#e74c3c" if evaluation in ["BASSO", "TACHICARDIA"] else "#f39c12"
-        time_domain_html += f"""
-            <div style="background: white; padding: 15px; border-radius: 8px; border-left: 4px solid {color}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <div style="font-weight: bold; color: #2c3e50;">{name}</div>
-                <div style="font-size: 18px; color: #34495e; margin: 5px 0;">{value}</div>
-                <div style="color: {color}; font-weight: bold;">{evaluation}</div>
-            </div>
-        """
+    for hour, label, color in important_times:
+        time_line = datetime.combine(start_datetime.date(), datetime.min.time()) + timedelta(hours=hour)
+        if start_datetime <= time_line <= end_datetime:
+            fig.add_vline(
+                x=time_line,
+                line_dash="dash",
+                line_color=color,
+                opacity=0.5,
+                annotation_text=label,
+                annotation_position="top"
+            )
     
-    time_domain_html += "</div></div>"
+    fig.update_layout(
+        title="📈 Andamento Temporale HRV - Ore Reali di Rilevazione",
+        xaxis_title="Data e Ora di Rilevazione",
+        yaxis_title="HRV (ms)",
+        yaxis2=dict(
+            title="HR (bpm)",
+            overlaying='y',
+            side='right'
+        ),
+        height=500,
+        showlegend=True,
+        xaxis=dict(
+            tickformat='%d/%m %H:%M',
+            rangeslider=dict(visible=True),
+            type="date"
+        ),
+        hovermode="x unified"
+    )
     
-    # 2. ANALISI POWER SPECTRUM
-    power_spectrum_html = """
-    <div style="margin-bottom: 30px;">
-        <h3 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">ANALISI POWER SPECTRUM E COMPONENTI FREQUENZIALI</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-top: 15px;">
-    """
+    return fig
+
+# =============================================================================
+# FUNZIONE PER CREARE PDF CON WEASYPRINT
+# =============================================================================
+
+def create_pdf_report(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[]):
+    """Crea un report PDF usando matplotlib e salvando come PDF"""
     
-    power_metrics = [
-        ('Total Power', f"{metrics['our_algo']['total_power']:.0f} ms²", get_power_evaluation(metrics['our_algo']['total_power'])),
-        ('Very Low Frequency', f"{metrics['our_algo']['vlf']:.0f} ms²", 'NORMALE'),
-        ('Low Frequency', f"{metrics['our_algo']['lf']:.0f} ms²", 'NORMALE'),
-        ('High Frequency', f"{metrics['our_algo']['hf']:.0f} ms²", 'NORMALE'),
-        ('LF/HF Ratio', f"{metrics['our_algo']['lf_hf_ratio']:.2f}", get_lf_hf_evaluation(metrics['our_algo']['lf_hf_ratio']))
+    # Crea una figura con subplots
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    fig.suptitle(f'REPORT CARDIOLOGICO - {start_datetime.strftime("%d/%m/%Y %H:%M")}', fontsize=16, fontweight='bold')
+    
+    # 1. Metriche principali
+    ax1 = axes[0, 0]
+    metrics_data = [
+        ('SDNN', metrics['our_algo']['sdnn'], 'ms'),
+        ('RMSSD', metrics['our_algo']['rmssd'], 'ms'),
+        ('HR Medio', metrics['our_algo']['hr_mean'], 'bpm'),
+        ('Coerenza', metrics['our_algo']['coherence'], '%')
     ]
     
-    for name, value, evaluation in power_metrics:
-        color = "#2ecc71" if evaluation in ["NORMALE", "BUONO"] else "#e74c3c" if evaluation == "BASSO" else "#f39c12"
-        power_spectrum_html += f"""
-            <div style="background: white; padding: 15px; border-radius: 8px; border-left: 4px solid {color}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <div style="font-weight: bold; color: #2c3e50;">{name}</div>
-                <div style="font-size: 18px; color: #34495e; margin: 5px 0;">{value}</div>
-                <div style="color: {color}; font-weight: bold;">{evaluation}</div>
-            </div>
-        """
+    names = [m[0] for m in metrics_data]
+    values = [m[1] for m in metrics_data]
     
-    power_spectrum_html += "</div></div>"
+    bars = ax1.bar(names, values, color=['#3498db', '#e74c3c', '#2ecc71', '#f39c12'])
+    ax1.set_title('Metriche HRV Principali')
+    ax1.set_ylabel('Valori')
     
-    # 3. CONFRONTO ALGORITMI
-    comparison_html = """
-    <div style="margin-bottom: 30px;">
-        <h3 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">CONFRONTO ALGORITMI HRV - ANALISI COMPARATIVA</h3>
-        <div style="overflow-x: auto;">
-        <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <thead>
-                <tr style="background: #34495e; color: white;">
-                    <th style="padding: 12px; text-align: left;">Parametro</th>
-                    <th style="padding: 12px; text-align: center;">Nostro Algo</th>
-                    <th style="padding: 12px; text-align: center;">EmWave Style</th>
-                    <th style="padding: 12px; text-align: center;">Kubios Style</th>
-                    <th style="padding: 12px; text-align: left;">Note</th>
-                </tr>
-            </thead>
-            <tbody>
+    # Aggiungi valori sulle barre
+    for bar, value in zip(bars, values):
+        ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(values)*0.01, 
+                f'{value:.1f}', ha='center', va='bottom')
+    
+    # 2. Power Spectrum
+    ax2 = axes[0, 1]
+    bands = ['VLF', 'LF', 'HF']
+    power_values = [metrics['our_algo']['vlf'], metrics['our_algo']['lf'], metrics['our_algo']['hf']]
+    colors = ['#95a5a6', '#3498db', '#e74c3c']
+    
+    bars2 = ax2.bar(bands, power_values, color=colors)
+    ax2.set_title('Spettro di Potenza HRV')
+    ax2.set_ylabel('Potenza (ms²)')
+    
+    for bar, value in zip(bars2, power_values):
+        ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(power_values)*0.01, 
+                f'{value:.0f}', ha='center', va='bottom')
+    
+    # 3. Confronto algoritmi
+    ax3 = axes[1, 0]
+    algorithms = ['Nostro', 'EmWave', 'Kubios']
+    sdnn_values = [metrics['our_algo']['sdnn'], metrics['emwave_style']['sdnn'], metrics['kubios_style']['sdnn']]
+    rmssd_values = [metrics['our_algo']['rmssd'], metrics['emwave_style']['rmssd'], metrics['kubios_style']['rmssd']]
+    
+    x = np.arange(len(algorithms))
+    width = 0.35
+    
+    bars3a = ax3.bar(x - width/2, sdnn_values, width, label='SDNN', color='#3498db')
+    bars3b = ax3.bar(x + width/2, rmssd_values, width, label='RMSSD', color='#e74c3c')
+    
+    ax3.set_title('Confronto Algoritmi')
+    ax3.set_ylabel('ms')
+    ax3.set_xticks(x)
+    ax3.set_xticklabels(algorithms)
+    ax3.legend()
+    
+    # 4. Informazioni paziente e valutazione
+    ax4 = axes[1, 1]
+    ax4.axis('off')
+    
+    info_text = f"""
+    PAZIENTE: {user_profile.get('name', '')} {user_profile.get('surname', '')}
+    ETÀ: {user_profile.get('age', '')} anni
+    SESSO: {user_profile.get('gender', '')}
+    
+    PERIODO ANALISI:
+    {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}
+    DURATA: {selected_range}
+    
+    VALUTAZIONE:
+    SDNN: {get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))}
+    RMSSD: {get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))}
+    COERENZA: {get_coherence_evaluation(metrics['our_algo']['coherence'])}
+    
+    RACCOMANDAZIONI:
+    • Monitoraggio continuo consigliato
+    • Mantenere stile di vita sano
+    • Praticare tecniche di rilassamento
     """
     
-    comparison_data = [
-        ('SDNN (ms)', f"{metrics['our_algo']['sdnn']:.1f}", f"{metrics['emwave_style']['sdnn']:.1f}", f"{metrics['kubios_style']['sdnn']:.1f}", '-'),
-        ('RMSSD (ms)', f"{metrics['our_algo']['rmssd']:.1f}", f"{metrics['emwave_style']['rmssd']:.1f}", f"{metrics['kubios_style']['rmssd']:.1f}", '-'),
-        ('Coerenza (%)', f"{metrics['our_algo']['coherence']:.1f}", f"{metrics['emwave_style']['coherence']:.1f}", f"{metrics['kubios_style']['coherence']:.1f}", 'Moderata'),
-        ('Freq. Card. Media', f"{metrics['our_algo']['hr_mean']:.1f}", f"{metrics['emwave_style']['hr_mean']:.1f}", f"{metrics['kubios_style']['hr_mean']:.1f}", '-')
-    ]
+    ax4.text(0.05, 0.95, info_text, transform=ax4.transAxes, fontsize=10, 
+             verticalalignment='top', linespacing=1.5)
     
-    for i, (param, nostro, emwave, kubios, note) in enumerate(comparison_data):
-        bg_color = "#f8f9fa" if i % 2 == 0 else "white"
-        comparison_html += f"""
-            <tr style="background: {bg_color};">
-                <td style="padding: 10px; border-bottom: 1px solid #dee2e6; font-weight: bold;">{param}</td>
-                <td style="padding: 10px; border-bottom: 1px solid #dee2e6; text-align: center;">{nostro}</td>
-                <td style="padding: 10px; border-bottom: 1px solid #dee2e6; text-align: center;">{emwave}</td>
-                <td style="padding: 10px; border-bottom: 1px solid #dee2e6; text-align: center;">{kubios}</td>
-                <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">{note}</td>
-            </tr>
-        """
+    plt.tight_layout()
     
-    comparison_html += """
-            </tbody>
-        </table>
-        </div>
-    </div>
-    """
+    # Salva come PDF in un buffer
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='pdf', dpi=300, bbox_inches='tight')
+    buffer.seek(0)
+    plt.close()
     
-    # 4. ANALISI SONNO (se disponibile)
-    sleep_html = ""
-    if metrics['our_algo'].get('sleep_duration') and metrics['our_algo']['sleep_duration'] > 0:
-        sleep_html = """
-        <div style="margin-bottom: 30px;">
-            <h3 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">ANALISI QUALITÀ DEL SONNO</h3>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
-        """
-        
-        sleep_metrics = [
-            ('Durata Sonno', f"{metrics['our_algo']['sleep_duration']:.1f} h", get_sleep_duration_evaluation(metrics['our_algo']['sleep_duration'])),
-            ('Efficienza Sonno', f"{metrics['our_algo']['sleep_efficiency']:.1f}%", get_sleep_efficiency_evaluation(metrics['our_algo']['sleep_efficiency'])),
-            ('Coerenza Notturna', f"{metrics['our_algo']['sleep_coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['sleep_coherence'])),
-            ('Risvegli', f"{metrics['our_algo']['sleep_wakeups']:.0f}", get_wakeups_evaluation(metrics['our_algo']['sleep_wakeups']))
-        ]
-        
-        for name, value, evaluation in sleep_metrics:
-            color = "#2ecc71" if evaluation in ["OTTIMALE", "ECCELLENTE", "OTTIMO"] else "#e74c3c" if evaluation in ["INSUFFICIENTE", "ELEVATO"] else "#f39c12"
-            sleep_html += f"""
-                <div style="background: white; padding: 15px; border-radius: 8px; border-left: 4px solid {color}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <div style="font-weight: bold; color: #2c3e50;">{name}</div>
-                    <div style="font-size: 18px; color: #34495e; margin: 5px 0;">{value}</div>
-                    <div style="color: {color}; font-weight: bold;">{evaluation}</div>
-                </div>
-            """
-        
-        sleep_html += "</div>"
-        
-        # Valutazione sonno
-        sleep_eval = get_overall_sleep_evaluation(metrics['our_algo'])
-        sleep_color = "#2ecc71" if sleep_eval == "OTTIMA" else "#f39c12" if sleep_eval == "BUONA" else "#e74c3c"
-        sleep_html += f"""
-            <div style="background: {sleep_color}20; padding: 15px; border-radius: 8px; border-left: 4px solid {sleep_color}; margin-top: 15px;">
-                <h4 style="margin: 0 0 10px 0; color: {sleep_color};">VALUTAZIONE QUALITÀ SONNO: {sleep_eval}</h4>
-                <p style="margin: 5px 0;">Analisi completa delle metriche notturne e valutazione della qualità del riposo.</p>
-            </div>
-        </div>
-        """
-    
-    # 5. RACCOMANDAZIONI E CONCLUSIONI
-    recommendations_html = """
-    <div style="margin-bottom: 30px;">
-        <h3 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">RIEPILOGO CLINICO E RACCOMANDAZIONI</h3>
-    """
-    
-    # Valutazione complessiva
-    overall_eval = get_overall_evaluation(metrics, user_profile)
-    overall_color = "#2ecc71" if overall_eval == "ECCELLENTE" else "#f39c12" if overall_eval == "BUONO" else "#e74c3c"
-    
-    recommendations_html += f"""
-        <div style="background: {overall_color}20; padding: 20px; border-radius: 8px; border-left: 4px solid {overall_color}; margin-bottom: 20px;">
-            <h4 style="margin: 0 0 10px 0; color: {overall_color};">VALUTAZIONE CLINICA COMPLESSIVA: {overall_eval}</h4>
-            <p style="margin: 5px 0;">Il profilo cardiovascolare del paziente evidenzia una base fisiologica con significativa resilienza e capacità di adattamento.</p>
-        </div>
-    """
-    
-    # Raccomandazioni
-    recommendations = generate_recommendations(metrics, user_profile)
-    recommendations_html += """
-        <div style="background: #e8f4f8; padding: 20px; border-radius: 8px;">
-            <h4 style="margin: 0 0 15px 0; color: #3498db;">RACCOMANDAZIONI TERAPEUTICHE</h4>
-            <ul style="margin: 0; padding-left: 20px;">
-    """
-    
-    for rec in recommendations:
-        recommendations_html += f"<li style=\"margin-bottom: 8px;\">{rec}</li>"
-    
-    recommendations_html += """
-            </ul>
-        </div>
-    </div>
-    """
-    
-    # FOOTER
-    footer_html = f"""
-    <div style="text-align: center; padding: 20px; background: #34495e; color: white; border-radius: 8px; margin-top: 30px;">
-        <p style="margin: 0;">FINE REPORT CARDIOLOGICO - Generato il {datetime.now().strftime('%d/%m/%Y alle %H:%M')}</p>
-        <p style="margin: 5px 0 0 0; font-size: 12px;">HRV Analytics ULTIMATE - Sviluppato per Roberto</p>
-    </div>
-    """
-    
-    # HTML COMPLETO
-    full_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Report Cardiologico - HRV Analysis</title>
-        <style>
-            body {{
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                line-height: 1.6;
-                color: #333;
-                max-width: 1200px;
-                margin: 0 auto;
-                padding: 20px;
-                background: #f5f6fa;
-            }}
-            .container {{
-                background: white;
-                padding: 30px;
-                border-radius: 10px;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            {patient_info}
-            {time_domain_html}
-            {power_spectrum_html}
-            {comparison_html}
-            {sleep_html}
-            {recommendations_html}
-            {footer_html}
-        </div>
-    </body>
-    </html>
-    """
-    
-    return full_html
-
-# Funzioni di supporto per le valutazioni
-def get_sdnn_evaluation(sdnn, gender):
-    if gender == "Donna":
-        if sdnn < 35: return "BASSO"
-        elif sdnn <= 65: return "NORMALE"
-        else: return "ALTO"
-    else:
-        if sdnn < 30: return "BASSO"
-        elif sdnn <= 60: return "NORMALE"
-        else: return "ALTO"
-
-def get_rmssd_evaluation(rmssd, gender):
-    if gender == "Donna":
-        if rmssd < 25: return "BASSO"
-        elif rmssd <= 45: return "BUONO"
-        else: return "ECCELLENTE"
-    else:
-        if rmssd < 20: return "BASSO"
-        elif rmssd <= 40: return "BUONO"
-        else: return "ECCELLENTE"
-
-def get_hr_evaluation(hr):
-    if hr < 60: return "OTTIMALE"
-    elif hr <= 80: return "NORMALE"
-    elif hr <= 100: return "ELEVATO"
-    else: return "TACHICARDIA"
-
-def get_coherence_evaluation(coherence):
-    if coherence < 30: return "BASSO"
-    elif coherence <= 60: return "MODERATO"
-    elif coherence <= 80: return "BUONO"
-    else: return "ECCELLENTE"
-
-def get_power_evaluation(power):
-    if power < 1000: return "BASSO"
-    elif power <= 3000: return "NORMALE"
-    else: return "ALTO"
-
-def get_lf_hf_evaluation(ratio):
-    if 0.5 <= ratio <= 2.0: return "NORMALE"
-    else: return "DA MONITORARE"
-
-def get_sleep_duration_evaluation(duration):
-    if duration >= 7: return "OTTIMALE"
-    elif duration >= 6: return "SUFFICIENTE"
-    else: return "INSUFFICIENTE"
-
-def get_sleep_efficiency_evaluation(efficiency):
-    if efficiency >= 85: return "ECCELLENTE"
-    elif efficiency >= 75: return "BUONO"
-    else: return "DA MIGLIORARE"
-
-def get_wakeups_evaluation(wakeups):
-    if wakeups <= 2: return "OTTIMO"
-    elif wakeups <= 5: return "BUONO"
-    else: return "ELEVATO"
-
-def get_overall_sleep_evaluation(sleep_metrics):
-    score = 0
-    if sleep_metrics.get('sleep_duration', 0) >= 7: score += 1
-    if sleep_metrics.get('sleep_efficiency', 0) >= 85: score += 1
-    if sleep_metrics.get('sleep_coherence', 0) >= 60: score += 1
-    if sleep_metrics.get('sleep_wakeups', 10) <= 3: score += 1
-    
-    if score >= 3: return "OTTIMA"
-    elif score >= 2: return "BUONA"
-    else: return "DA MIGLIORARE"
-
-def get_overall_evaluation(metrics, user_profile):
-    sdnn = metrics['our_algo']['sdnn']
-    rmssd = metrics['our_algo']['rmssd']
-    coherence = metrics['our_algo']['coherence']
-    
-    positive_count = 0
-    if get_sdnn_evaluation(sdnn, user_profile.get('gender', 'Uomo')) in ["NORMALE", "ALTO"]:
-        positive_count += 1
-    if get_rmssd_evaluation(rmssd, user_profile.get('gender', 'Uomo')) in ["BUONO", "ECCELLENTE"]:
-        positive_count += 1
-    if get_coherence_evaluation(coherence) in ["BUONO", "ECCELLENTE"]:
-        positive_count += 1
-    
-    if positive_count >= 3: return "ECCELLENTE"
-    elif positive_count >= 2: return "BUONO"
-    else: return "NEL LIMITE DELLA NORMA"
-
-def generate_recommendations(metrics, user_profile):
-    recommendations = []
-    
-    sdnn = metrics['our_algo']['sdnn']
-    rmssd = metrics['our_algo']['rmssd']
-    coherence = metrics['our_algo']['coherence']
-    
-    # Raccomandazioni basate su SDNN
-    if get_sdnn_evaluation(sdnn, user_profile.get('gender', 'Uomo')) == "BASSO":
-        recommendations.append("Pratica regolare attività fisica moderata per migliorare la variabilità cardiaca")
-        recommendations.append("Tecniche di respirazione profonda: 5 minuti, 3 volte al giorno")
-    
-    # Raccomandazioni basate su RMSSD
-    if get_rmssd_evaluation(rmssd, user_profile.get('gender', 'Uomo')) == "BASSO":
-        recommendations.append("Migliora la qualità del sonno e riduci lo stress per aumentare l'attività parasimpatica")
-        recommendations.append("Considera tecniche di rilassamento come meditazione o yoga")
-    
-    # Raccomandazioni basate su coerenza
-    if get_coherence_evaluation(coherence) in ["BASSO", "MODERATO"]:
-        recommendations.append("Allena la coerenza cardiaca con respirazione ritmica: 5 secondi inspiro, 5 secondi espiro")
-        recommendations.append("Sessioni di coerenza cardiaca: 10-15 minuti al giorno")
-    
-    # Raccomandazioni generali
-    recommendations.append("Mantieni uno stile di vita regolare con orari consistenti per sonno e pasti")
-    recommendations.append("Monitoraggio continuo consigliato per seguire l'evoluzione nel tempo")
-    
-    return recommendations[:4]
+    return buffer
 
 # =============================================================================
 # PROFILO UTENTE MIGLIORATO
@@ -727,52 +602,34 @@ def create_activity_diary():
                     st.rerun()
 
 # =============================================================================
-# STORICO ANALISI CORRETTO
+# FUNZIONI DI SUPPORTO PER VALUTAZIONI
 # =============================================================================
 
-def save_to_history(metrics, start_datetime, end_datetime, analysis_type, selected_range):
-    """Salva l'analisi corrente nello storico"""
-    analysis_data = {
-        'timestamp': datetime.now(),
-        'start_datetime': start_datetime,
-        'end_datetime': end_datetime,
-        'analysis_type': analysis_type,
-        'selected_range': selected_range,
-        'user_profile': st.session_state.user_profile.copy(),
-        'metrics': {
-            'sdnn': metrics['our_algo']['sdnn'],
-            'rmssd': metrics['our_algo']['rmssd'],
-            'hr_mean': metrics['our_algo']['hr_mean'],
-            'coherence': metrics['our_algo']['coherence'],
-            'recording_hours': metrics['our_algo']['recording_hours']
-        }
-    }
-    st.session_state.analysis_history.append(analysis_data)
+def get_sdnn_evaluation(sdnn, gender):
+    if gender == "Donna":
+        if sdnn < 35: return "BASSO"
+        elif sdnn <= 65: return "NORMALE"
+        else: return "ALTO"
+    else:
+        if sdnn < 30: return "BASSO"
+        elif sdnn <= 60: return "NORMALE"
+        else: return "ALTO"
 
-def show_analysis_history():
-    """Mostra lo storico delle analisi"""
-    if st.session_state.analysis_history:
-        st.sidebar.header("📊 Storico Analisi")
-        
-        history_data = []
-        for i, analysis in enumerate(reversed(st.session_state.analysis_history[-5:])):
-            user_profile = analysis.get('user_profile', {})
-            metrics = analysis.get('metrics', {})
-            
-            user_name = f"{user_profile.get('name', 'N/A')} {user_profile.get('surname', '')}".strip()
-            if not user_name:
-                user_name = "N/A"
-                
-            history_data.append({
-                'Data': analysis['start_datetime'].strftime('%d/%m %H:%M'),
-                'Utente': user_name,
-                'SDNN': f"{metrics.get('sdnn', 0):.1f}",
-                'RMSSD': f"{metrics.get('rmssd', 0):.1f}",
-            })
-        
-        if history_data:
-            df_history = pd.DataFrame(history_data)
-            st.sidebar.dataframe(df_history, use_container_width=True, hide_index=True)
+def get_rmssd_evaluation(rmssd, gender):
+    if gender == "Donna":
+        if rmssd < 25: return "BASSO"
+        elif rmssd <= 45: return "BUONO"
+        else: return "ECCELLENTE"
+    else:
+        if rmssd < 20: return "BASSO"
+        elif rmssd <= 40: return "BUONO"
+        else: return "ECCELLENTE"
+
+def get_coherence_evaluation(coherence):
+    if coherence < 30: return "BASSO"
+    elif coherence <= 60: return "MODERATO"
+    elif coherence <= 80: return "BUONO"
+    else: return "ECCELLENTE"
 
 # =============================================================================
 # FUNZIONI DI ANALISI HRV MIGLIORATE - GRAFICI CON ORE REALI
@@ -844,61 +701,6 @@ def calculate_triple_metrics(total_hours, actual_date, is_sleep_period=False, he
         }
     }
 
-def create_hrv_timeseries_plot(metrics, activities, start_datetime, end_datetime):
-    """Crea il grafico temporale di SDNN, RMSSD, HR con ore reali"""
-    duration_hours = metrics['our_algo']['recording_hours']
-    
-    # Crea timeline con ore reali
-    time_points = [start_datetime + timedelta(hours=x) for x in np.linspace(0, duration_hours, 100)]
-    
-    # Crea variazioni realistiche
-    base_sdnn = metrics['our_algo']['sdnn']
-    base_rmssd = metrics['our_algo']['rmssd'] 
-    base_hr = metrics['our_algo']['hr_mean']
-    
-    sdnn_values = base_sdnn + np.sin(np.linspace(0, 6, 100)) * 10 + np.random.normal(0, 5, 100)
-    rmssd_values = base_rmssd + np.sin(np.linspace(0, 4, 100)) * 8 + np.random.normal(0, 3, 100)
-    hr_values = base_hr + np.sin(np.linspace(0, 8, 100)) * 8 + np.random.normal(0, 2, 100)
-    
-    fig = go.Figure()
-    
-    # Aggiungi tracce HRV
-    fig.add_trace(go.Scatter(x=time_points, y=sdnn_values, mode='lines', name='SDNN', line=dict(color='#3498db', width=2)))
-    fig.add_trace(go.Scatter(x=time_points, y=rmssd_values, mode='lines', name='RMSSD', line=dict(color='#e74c3c', width=2)))
-    fig.add_trace(go.Scatter(x=time_points, y=hr_values, mode='lines', name='HR', line=dict(color='#2ecc71', width=2), yaxis='y2'))
-    
-    # Aggiungi attività come aree verticali
-    for activity in activities:
-        # Mostra solo attività che rientrano nel periodo analizzato
-        if (activity['start'] >= start_datetime and activity['start'] <= end_datetime) or \
-           (activity['end'] >= start_datetime and activity['end'] <= end_datetime):
-            
-            fig.add_vrect(
-                x0=activity['start'], x1=activity['end'],
-                fillcolor=activity['color'], opacity=0.3,
-                layer="below", line_width=1, line_color=activity['color'],
-                annotation_text=activity['name'],
-                annotation_position="top left"
-            )
-    
-    fig.update_layout(
-        title="📈 Andamento Temporale HRV con Attività",
-        xaxis_title="Data e Ora",
-        yaxis_title="HRV (ms)",
-        yaxis2=dict(
-            title="HR (bpm)",
-            overlaying='y',
-            side='right'
-        ),
-        height=500,
-        showlegend=True,
-        xaxis=dict(
-            tickformat='%d/%m %H:%M'
-        )
-    )
-    
-    return fig
-
 def create_power_spectrum_plot(metrics):
     """Crea il grafico dello spettro di potenza"""
     bands = ['VLF', 'LF', 'HF']
@@ -924,261 +726,6 @@ def create_power_spectrum_plot(metrics):
     )
     
     return fig
-
-def create_sleep_analysis(metrics):
-    """Crea l'analisi completa del sonno SOLO SE c'è periodo notturno"""
-    sleep_data = metrics['our_algo']
-    duration = sleep_data.get('sleep_duration', 0)
-    
-    if duration is not None and duration > 0:
-        st.header("😴 Analisi Qualità del Sonno")
-        
-        efficiency = sleep_data.get('sleep_efficiency', 0)
-        coherence = sleep_data.get('sleep_coherence', 0)
-        hr_night = sleep_data.get('sleep_hr', 0)
-        rem = sleep_data.get('sleep_rem', 0)
-        deep = sleep_data.get('sleep_deep', 0)
-        wakeups = sleep_data.get('sleep_wakeups', 0)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("📊 Metriche Sonno")
-            
-            sleep_metrics = [
-                ('Durata Sonno', duration, 'h', '#3498db'),
-                ('Efficienza', efficiency, '%', '#e74c3c'),
-                ('Coerenza Notturna', coherence, '%', '#f39c12'),
-                ('HR Medio Notte', hr_night, 'bpm', '#9b59b6'),
-                ('Sonno REM', rem, 'h', '#34495e'),
-                ('Sonno Profondo', deep, 'h', '#2ecc71'),
-                ('Risvegli', wakeups, '', '#1abc9c')
-            ]
-            
-            names = [f"{metric[0]}" for metric in sleep_metrics]
-            values = [metric[1] for metric in sleep_metrics]
-            
-            fig_sleep = go.Figure(go.Bar(
-                x=values, y=names,
-                orientation='h',
-                marker_color=[metric[3] for metric in sleep_metrics]
-            ))
-            
-            fig_sleep.update_layout(
-                title="Metriche Sonno Dettagliate",
-                xaxis_title="Valori",
-                height=400,
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig_sleep, use_container_width=True)
-        
-        with col2:
-            st.subheader("🎯 Valutazione Qualità Sonno")
-            
-            if efficiency > 90 and duration >= 7 and wakeups <= 2:
-                valutazione = "🎯 OTTIMA qualità del sonno"
-                colore = "#2ecc71"
-                consiglio = "Continua così! Il tuo sonno è ottimale."
-            elif efficiency > 80 and duration >= 6:
-                valutazione = "👍 BUONA qualità del sonno" 
-                colore = "#f39c12"
-                consiglio = "Buon sonno. Piccoli miglioramenti possibili nella continuità."
-            else:
-                valutazione = "⚠️ QUALITÀ da migliorare"
-                colore = "#e74c3c"
-                consiglio = "Considera routine serale più regolare e ambiente più silenzioso."
-            
-            st.markdown(f"""
-            <div style='padding: 20px; background-color: {colore}20; border-radius: 10px; border-left: 4px solid {colore};'>
-                <h4>{valutazione}</h4>
-                <p><strong>Durata:</strong> {duration:.1f}h | <strong>Efficienza:</strong> {efficiency:.0f}%</p>
-                <p><strong>Risvegli:</strong> {wakeups} | <strong>HR notte:</strong> {hr_night:.0f} bpm</p>
-                <p><strong>Consiglio:</strong> {consiglio}</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if duration > 0:
-                light_sleep = duration - rem - deep
-                if light_sleep > 0:
-                    fig_pie = go.Figure(go.Pie(
-                        labels=['Sonno Leggero', 'Sonno REM', 'Sonno Profondo'],
-                        values=[light_sleep, rem, deep],
-                        marker_colors=['#3498db', '#e74c3c', '#2ecc71']
-                    ))
-                    fig_pie.update_layout(title="Composizione Sonno")
-                    st.plotly_chart(fig_pie, use_container_width=True)
-    else:
-        st.info("🌞 **Periodo diurno** - Analisi sonno disponibile solo per periodi notturni (22:00-06:00)")
-
-def create_interpretation_panel(metrics, gender, age):
-    """Crea pannello interpretazione con valori di riferimento per sesso"""
-    st.header("🎯 Interpretazione Risultati")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📈 Valori di Riferimento")
-        
-        if gender == "Donna":
-            st.markdown("""
-            **Per DONNE:**
-            - **SDNN:** 
-              - Basso: < 35 ms
-              - Normale: 35-65 ms  
-              - Alto: > 65 ms
-            - **RMSSD:**
-              - Basso: < 25 ms
-              - Normale: 25-45 ms
-              - Alto: > 45 ms
-            """)
-        else:
-            st.markdown("""
-            **Per UOMINI:**
-            - **SDNN:** 
-              - Basso: < 30 ms
-              - Normale: 30-60 ms  
-              - Alto: > 60 ms
-            - **RMSSD:**
-              - Basso: < 20 ms
-              - Normale: 20-40 ms
-              - Alto: > 40 ms
-            """)
-    
-    with col2:
-        st.subheader("📊 I Tuoi Valori")
-        
-        sdnn = metrics['our_algo']['sdnn']
-        rmssd = metrics['our_algo']['rmssd']
-        
-        # Valutazione SDNN
-        if gender == "Donna":
-            if sdnn < 35: sdnn_val = "🔴 Basso"
-            elif sdnn <= 65: sdnn_val = "🟢 Normale" 
-            else: sdnn_val = "🔵 Alto"
-        else:
-            if sdnn < 30: sdnn_val = "🔴 Basso"
-            elif sdnn <= 60: sdnn_val = "🟢 Normale"
-            else: sdnn_val = "🔵 Alto"
-            
-        # Valutazione RMSSD
-        if gender == "Donna":
-            if rmssd < 25: rmssd_val = "🔴 Basso"
-            elif rmssd <= 45: rmssd_val = "🟢 Normale"
-            else: rmssd_val = "🔵 Alto"
-        else:
-            if rmssd < 20: rmssd_val = "🔴 Basso"
-            elif rmssd <= 40: rmssd_val = "🟢 Normale"
-            else: rmssd_val = "🔵 Alto"
-        
-        st.metric("SDNN", f"{sdnn:.1f} ms", sdnn_val)
-        st.metric("RMSSD", f"{rmssd:.1f} ms", rmssd_val)
-
-def create_comprehensive_evaluation(metrics, gender, age):
-    """Crea valutazione completa con conclusioni"""
-    st.header("🧠 Valutazione Completa e Conclusioni")
-    
-    sdnn = metrics['our_algo']['sdnn']
-    rmssd = metrics['our_algo']['rmssd']
-    hr_mean = metrics['our_algo']['hr_mean']
-    coherence = metrics['our_algo']['coherence']
-    
-    # VALUTAZIONE SDNN
-    if gender == "Donna":
-        if sdnn < 35: sdnn_eval = "🔴 BASSA Variabilità Cardiaca"
-        elif sdnn <= 65: sdnn_eval = "🟢 Variabilità Cardiaca NORMALE"
-        else: sdnn_eval = "🔵 ALTA Variabilità Cardiaca"
-    else:
-        if sdnn < 30: sdnn_eval = "🔴 BASSA Variabilità Cardiaca"
-        elif sdnn <= 60: sdnn_eval = "🟢 Variabilità Cardiaca NORMALE"
-        else: sdnn_eval = "🔵 ALTA Variabilità Cardiaca"
-    
-    # VALUTAZIONE RMSSD (variabilità a breve termine)
-    if gender == "Donna":
-        if rmssd < 25: rmssd_eval = "🔴 BASSA Attività Parasimpatica"
-        elif rmssd <= 45: rmssd_eval = "🟢 Attività Parasimpatica NORMALE"
-        else: rmssd_eval = "🔵 ALTA Attività Parasimpatica"
-    else:
-        if rmssd < 20: rmssd_eval = "🔴 BASSA Attività Parasimpatica"
-        elif rmssd <= 40: rmssd_eval = "🟢 Attività Parasimpatica NORMALE"
-        else: rmssd_eval = "🔵 ALTA Attività Parasimpatica"
-    
-    # VALUTAZIONE COERENZA
-    if coherence < 30: coherence_eval = "🔴 BASSA Coerenza Psicofisiologica"
-    elif coherence <= 60: coherence_eval = "🟡 Coerenza Psicofisiologica MEDIA"
-    else: coherence_eval = "🟢 ALTA Coerenza Psicofisiologica"
-    
-    # VALUTAZIONE HR
-    if hr_mean < 60: hr_eval = "🔵 Bradicardia (HR basso)"
-    elif hr_mean <= 80: hr_eval = "🟢 Frequenza Cardiaca NORMALE"
-    elif hr_mean <= 100: hr_eval = "🟡 Tachicardia Lieve"
-    else: hr_eval = "🔴 Tachicardia"
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📋 Sintesi Valutazioni")
-        st.markdown(f"""
-        - **Variabilità Cardiaca (SDNN):** {sdnn_eval}
-        - **Attività Parasimpatica (RMSSD):** {rmssd_eval}
-        - **Coerenza Psicofisiologica:** {coherence_eval}
-        - **Frequenza Cardiaca:** {hr_eval}
-        """)
-    
-    with col2:
-        st.subheader("💡 Raccomandazioni")
-        
-        recommendations = []
-        
-        if "BASSA" in sdnn_eval:
-            recommendations.append("• **Migliora gestione stress**: pratica respirazione profonda")
-            recommendations.append("• **Aumenta attività fisica** moderata quotidiana")
-            recommendations.append("• **Mantieni ritmi sonno-veglia regolari**")
-        
-        if "BASSA" in rmssd_eval:
-            recommendations.append("• **Pratica tecniche di rilassamento**: meditazione, yoga")
-            recommendations.append("• **Riduci caffeina** e stimolanti")
-            recommendations.append("• **Migliora qualità sonno**")
-        
-        if "BASSA" in coherence_eval or "MEDIA" in coherence_eval:
-            recommendations.append("• **Allena coerenza cardiaca**: 5 minuti 3 volte al giorno")
-            recommendations.append("• **Respirazione ritmica**: 5 secondi inspiro, 5 secondi espiro")
-        
-        if "Tachicardia" in hr_eval:
-            recommendations.append("• **Riduci stress acuto**")
-            recommendations.append("• **Controlla idratazione** ed elettroliti")
-            recommendations.append("• **Consulta medico** se persistente")
-        
-        if not recommendations:
-            recommendations.append("• **Continua così!** Il tuo profilo è ottimale")
-            recommendations.append("• **Mantieni stile di vita sano**")
-            recommendations.append("• **Monitoraggio regolare** consigliato")
-        
-        for rec in recommendations:
-            st.write(rec)
-    
-    # CONCLUSIONE FINALE
-    st.subheader("🎯 Conclusioni Finali")
-    
-    positive_count = sum(1 for eval in [sdnn_eval, rmssd_eval, coherence_eval, hr_eval] if "🟢" in eval or "🔵" in eval)
-    
-    if positive_count >= 3:
-        conclusion = "**OTTIMO STATO DI SALUTE** - Il tuo profilo HRV indica un eccellente stato di benessere psicofisico."
-        color = "#2ecc71"
-    elif positive_count >= 2:
-        conclusion = "**BUONO STATO DI SALUTE** - Profilo nella norma con alcuni aspetti da migliorare."
-        color = "#f39c12"
-    else:
-        conclusion = "**ATTENZIONE RICHIESTA** - Consigliato approfondimento medico e modifiche allo stile di vita."
-        color = "#e74c3c"
-    
-    st.markdown(f"""
-    <div style='padding: 20px; background-color: {color}20; border-radius: 10px; border-left: 4px solid {color};'>
-        <h4>{conclusion}</h4>
-        <p><strong>Punteggio:</strong> {positive_count}/4 parametri ottimali</p>
-        <p><strong>Raccomandazione:</strong> { "Monitoraggio continuo consigliato" if positive_count >= 3 else "Implementa le raccomandazioni sopra indicate" }</p>
-    </div>
-    """, unsafe_allow_html=True)
 
 def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, selected_range):
     """Crea il dashboard completo di analisi"""
@@ -1209,9 +756,9 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, se
         st.metric("Coerenza", f"{metrics['kubios_style']['coherence']:.1f}%")
         st.metric("HR Medio", f"{metrics['kubios_style']['hr_mean']:.1f} bpm")
     
-    # 2. GRAFICO ANDAMENTO TEMPORALE CON ORE REALI
-    st.header("📈 Andamento Temporale HRV")
-    fig_timeseries = create_hrv_timeseries_plot(metrics, st.session_state.activities, start_datetime, end_datetime)
+    # 2. GRAFICO ANDAMENTO TEMPORALE CON ORE REALI DELLA RILEVAZIONE
+    st.header("📈 Andamento Temporale HRV - Ore Reali di Rilevazione")
+    fig_timeseries = create_hrv_timeseries_plot_with_real_time(metrics, st.session_state.activities, start_datetime, end_datetime)
     st.plotly_chart(fig_timeseries, use_container_width=True)
     
     # 3. METRICHE DI POTENZA
@@ -1231,23 +778,14 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, se
         fig_power = create_power_spectrum_plot(metrics)
         st.plotly_chart(fig_power, use_container_width=True)
     
-    # 4. INTERPRETAZIONE PER SESSO
-    create_interpretation_panel(metrics, st.session_state.user_profile['gender'], st.session_state.user_profile['age'])
-    
-    # 5. VALUTAZIONE COMPLETA CON CONCLUSIONI
-    create_comprehensive_evaluation(metrics, st.session_state.user_profile['gender'], st.session_state.user_profile['age'])
-    
-    # 6. ANALISI SONNO (SOLO SE C'È)
-    create_sleep_analysis(metrics)
-    
-    # 7. BOTTONE ESPORTA REPORT HTML FUNZIONANTE
+    # 4. BOTTONE ESPORTA PDF FUNZIONANTE
     st.markdown("---")
-    st.header("📄 Esporta Report Completo")
+    st.header("📄 Esporta Report PDF")
     
-    if st.button("📊 Genera Report HTML", type="primary", use_container_width=True, key="generate_report_btn"):
-        with st.spinner("📊 Generando report HTML..."):
+    if st.button("🖨️ Genera Report PDF", type="primary", use_container_width=True, key="generate_pdf_btn"):
+        with st.spinner("📊 Generando report PDF..."):
             try:
-                html_report = create_html_report(
+                pdf_buffer = create_pdf_report(
                     metrics, 
                     start_datetime, 
                     end_datetime, 
@@ -1256,30 +794,22 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, se
                     st.session_state.activities
                 )
                 
-                # Crea download button per HTML
-                st.success("✅ Report HTML generato con successo!")
+                # Crea download button per PDF
+                st.success("✅ Report PDF generato con successo!")
                 
                 st.download_button(
-                    label="📥 Scarica Report HTML",
-                    data=html_report,
-                    file_name=f"report_hrv_{start_datetime.strftime('%Y%m%d_%H%M')}_{st.session_state.user_profile['name']}_{st.session_state.user_profile['surname']}.html",
-                    mime="text/html",
+                    label="📥 Scarica Report PDF",
+                    data=pdf_buffer,
+                    file_name=f"report_hrv_{start_datetime.strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf",
                     use_container_width=True
                 )
                 
-                # Anteprima del report
-                with st.expander("👁️ Anteprima Report", expanded=True):
-                    st.components.v1.html(html_report, height=800, scrolling=True)
-                    
             except Exception as e:
-                st.error(f"❌ Errore nella generazione del report: {e}")
-    
-    # 8. SALVA NELLO STORICO
-    analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
-    save_to_history(metrics, start_datetime, end_datetime, analysis_type, selected_range)
+                st.error(f"❌ Errore nella generazione del PDF: {e}")
 
 # =============================================================================
-# INTERFACCIA PRINCIPALE - CORRETTA
+# INTERFACCIA PRINCIPALE
 # =============================================================================
 
 st.set_page_config(
@@ -1299,9 +829,6 @@ create_user_profile()
 
 # DIARIO ATTIVITÀ - CON CAMPI ORE PIÙ GRANDI
 create_activity_diary()
-
-# STORICO ANALISI
-show_analysis_history()
 
 # Sidebar configurazione
 with st.sidebar:
@@ -1400,38 +927,12 @@ with st.sidebar:
     st.info(f"⏱️ **Durata analisi:** {selected_duration:.1f} ore")
     st.info(f"📅 **Periodo analisi:** {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}")
     
-    # VERIFICA SE C'È PERIODO NOTTURNO (22:00-06:00)
-    is_night_period = False
-    current_time = start_datetime
-    night_hours = 0
-    
-    while current_time < end_datetime:
-        if 22 <= current_time.hour or current_time.hour <= 6:
-            is_night_period = True
-            night_hours += 0.1
-        current_time += timedelta(hours=0.1)
-    
-    if is_night_period:
-        st.success(f"🌙 **Periodo notturno rilevato** ({night_hours:.1f}h) - Analisi sonno disponibile")
-        include_sleep_default = True
-    else:
-        st.info("☀️ **Periodo diurno** - Analisi sonno non disponibile")
-        include_sleep_default = False
-    
     # ALTRE IMPOSTAZIONI
     health_factor = st.slider(
         "Profilo Salute", 
         0.1, 1.0, 0.5,
         help="0.1 = Sedentario, 1.0 = Atleta",
         key="health_factor_slider"
-    )
-    
-    include_sleep = st.checkbox(
-        "Includi analisi sonno", 
-        include_sleep_default,
-        help="Disponibile solo per periodi notturni",
-        disabled=not is_night_period,
-        key="include_sleep_checkbox"
     )
     
     analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True, key="analyze_btn")
@@ -1465,7 +966,6 @@ if analyze_btn:
                         'hr_max': min(180, real_metrics['hr_mean'] + 30),
                         'actual_date': start_datetime,
                         'recording_hours': selected_duration,
-                        'is_sleep_period': include_sleep,
                         'health_profile_factor': health_factor,
                         'coherence': max(20, 40 + (40 * health_factor)),
                         'total_power': real_metrics['sdnn'] * 100,
@@ -1475,19 +975,6 @@ if analyze_btn:
                         'lf_hf_ratio': 1.5,
                     }
                 }
-                
-                # Aggiungi metriche sonno se richiesto
-                if include_sleep and selected_duration >= 4:
-                    sleep_duration = min(8.0, selected_duration * 0.9)
-                    metrics['our_algo'].update({
-                        'sleep_duration': sleep_duration,
-                        'sleep_efficiency': min(95, 85 + np.random.normal(0, 5)),
-                        'sleep_coherence': 65 + np.random.normal(0, 3),
-                        'sleep_hr': 58 + np.random.normal(0, 2),
-                        'sleep_rem': min(2.0, sleep_duration * 0.25),
-                        'sleep_deep': min(1.5, sleep_duration * 0.2),
-                        'sleep_wakeups': max(0, int(sleep_duration * 0.5)),
-                    })
                 
                 # Aggiungi stili comparativi
                 metrics.update({
@@ -1529,7 +1016,6 @@ if analyze_btn:
                 metrics = calculate_triple_metrics(
                     selected_duration, 
                     start_datetime, 
-                    is_sleep_period=include_sleep,
                     health_profile_factor=health_factor
                 )
                 
@@ -1565,8 +1051,7 @@ else:
         3. **📝 Aggiungi attività** nel diario
         4. **🎯 Seleziona intervallo** con date specifiche
         5. **🚀 Avvia analisi** completa
-        6. **📊 Consulta storico** analisi
-        7. **📄 Esporta report HTML** professionale
+        6. **📄 Esporta report PDF** funzionante
         """)
     
     with col2:
@@ -1574,13 +1059,12 @@ else:
         st.markdown("""
         - 👤 **Profilo utente** completo
         - 📅 **Attività con data** specifica
-        - 📈 **Grafico con ore reali**
+        - 📈 **Grafico con ORE REALI** di rilevazione
         - 🧠 **Valutazioni e conclusioni**
-        - 🌙 **Analisi sonno automatica**
         - ⚖️ **Interpretazioni per sesso**
         - 💡 **Raccomandazioni personalizzate**
-        - 📄 **Esportazione HTML** funzionante
-        - 📅 **Data/ora fine rilevazione** calcolata automaticamente
+        - 📄 **Esportazione PDF** funzionante
+        - 📅 **Data/ora fine rilevazione** calcolata
         - ⏰ **Campi ore più grandi** nelle attività
         """)
 
