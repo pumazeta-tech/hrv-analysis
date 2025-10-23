@@ -125,9 +125,9 @@ def create_user_profile():
     with st.sidebar.expander("📝 Modifica Profilo", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
-            name = st.text_input("Nome", value=st.session_state.user_profile['name'], key="user_name")
+            name = st.text_input("Nome", value=st.session_state.user_profile['name'], key="profile_name")
         with col2:
-            surname = st.text_input("Cognome", value=st.session_state.user_profile['surname'], key="user_surname")
+            surname = st.text_input("Cognome", value=st.session_state.user_profile['surname'], key="profile_surname")
         
         # Data di nascita con range corretto
         min_date = datetime(1900, 1, 1).date()
@@ -143,21 +143,21 @@ def create_user_profile():
             value=current_birth_date,
             min_value=min_date,
             max_value=max_date,
-            key="user_birth_date"
+            key="profile_birth_date"
         )
         
         gender = st.selectbox(
             "Sesso",
             ["Uomo", "Donna"],
             index=0 if st.session_state.user_profile['gender'] == "Uomo" else 1,
-            key="user_gender"
+            key="profile_gender"
         )
         
         # Calcola età
         today = datetime.now().date()
         age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
         
-        if st.button("💾 Salva Profilo", use_container_width=True, key="save_profile"):
+        if st.button("💾 Salva Profilo", use_container_width=True, key="save_profile_btn"):
             st.session_state.user_profile = {
                 'name': name.strip(),
                 'surname': surname.strip(),
@@ -264,7 +264,7 @@ def calculate_hrv_metrics_from_rr(rr_intervals):
     }
 
 # =============================================================================
-# DIARIO ATTIVITÀ
+# DIARIO ATTIVITÀ - CHIAVI UNICHE
 # =============================================================================
 
 def create_activity_diary():
@@ -272,20 +272,20 @@ def create_activity_diary():
     st.sidebar.header("📝 Diario Attività")
     
     with st.sidebar.expander("➕ Aggiungi Attività", expanded=False):
-        activity_name = st.text_input("Nome attività*", placeholder="Scrivi qui...", key="activity_name")
+        activity_name = st.text_input("Nome attività*", placeholder="Scrivi qui...", key="diary_activity_name")
         
         st.write("**Orario attività:**")
         col1, col2 = st.columns(2)
         with col1:
-            start_time = st.time_input("Dalle ore", datetime.now().time(), key="start_time")
+            start_time = st.time_input("Dalle ore", datetime.now().time(), key="diary_start_time")
         with col2:
-            end_time = st.time_input("Alle ore", (datetime.now() + timedelta(hours=1)).time(), key="end_time")
+            end_time = st.time_input("Alle ore", (datetime.now() + timedelta(hours=1)).time(), key="diary_end_time")
         
-        activity_color = st.color_picker("Colore attività", "#3498db", key="activity_color")
+        activity_color = st.color_picker("Colore attività", "#3498db", key="diary_activity_color")
         
         col3, col4 = st.columns(2)
         with col3:
-            if st.button("💾 Salva Attività", use_container_width=True, key="save_activity"):
+            if st.button("💾 Salva Attività", use_container_width=True, key="save_activity_btn"):
                 if activity_name.strip():
                     start_datetime, end_datetime = get_analysis_datetimes()
                     activity_date = start_datetime.date()
@@ -309,7 +309,7 @@ def create_activity_diary():
                     st.error("❌ Inserisci un nome per l'attività")
         
         with col4:
-            if st.button("🗑️ Cancella Tutto", use_container_width=True, key="clear_activities"):
+            if st.button("🗑️ Cancella Tutto", use_container_width=True, key="clear_activities_btn"):
                 st.session_state.activities = []
                 st.success("✅ Tutte le attività cancellate!")
                 st.rerun()
@@ -762,7 +762,7 @@ with st.sidebar:
         "Seleziona file IBI/RR intervals",
         type=['csv', 'txt', 'xlsx'],
         help="Supporta: CSV, TXT, Excel con colonne RR/IBI intervals",
-        key="file_uploader"
+        key="main_file_uploader"
     )
     
     # Leggi il file per estrarre gli intervalli RR
@@ -788,22 +788,22 @@ with st.sidebar:
         if rr_intervals_from_file is not None:
             st.info(f"📊 **{len(rr_intervals_from_file)} intervalli RR**")
     
-    # SELEZIONE INTERVALLO CON DATA/ORA SPECIFICHE - VERSIONE CORRETTA
+    # SELEZIONE INTERVALLO CON DATA/ORA SPECIFICHE - CHIAVI UNICHE
     st.subheader("🎯 Selezione Intervallo Analisi")
     
-    # Usa date_input e time_input separatamente
+    # Usa date_input e time_input separatamente con chiavi uniche
     col_date1, col_time1 = st.columns(2)
     with col_date1:
         start_date = st.date_input(
             "Data Inizio",
             value=start_datetime.date(),
-            key="start_date"
+            key="analysis_start_date"
         )
     with col_time1:
         start_time = st.time_input(
             "Ora Inizio",
             value=start_datetime.time(),
-            key="start_time"
+            key="analysis_start_time"
         )
     
     col_date2, col_time2 = st.columns(2)
@@ -811,13 +811,13 @@ with st.sidebar:
         end_date = st.date_input(
             "Data Fine",
             value=end_datetime.date(),
-            key="end_date"
+            key="analysis_end_date"
         )
     with col_time2:
         end_time = st.time_input(
             "Ora Fine",
             value=end_datetime.time(),
-            key="end_time"
+            key="analysis_end_time"
         )
     
     # Combina date e time
@@ -858,17 +858,19 @@ with st.sidebar:
     health_factor = st.slider(
         "Profilo Salute", 
         0.1, 1.0, 0.5,
-        help="0.1 = Sedentario, 1.0 = Atleta"
+        help="0.1 = Sedentario, 1.0 = Atleta",
+        key="health_factor_slider"
     )
     
     include_sleep = st.checkbox(
         "Includi analisi sonno", 
         include_sleep_default,
         help="Disponibile solo per periodi notturni",
-        disabled=not is_night_period
+        disabled=not is_night_period,
+        key="include_sleep_checkbox"
     )
     
-    analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True)
+    analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True, key="analyze_btn")
 
 # MAIN CONTENT
 if analyze_btn:
