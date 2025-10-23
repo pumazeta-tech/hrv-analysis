@@ -88,19 +88,20 @@ def create_activity_diary():
         st.session_state.activities = []
     
     with st.sidebar.expander("➕ Aggiungi Attività", expanded=False):
-        # Data e nome attività
+        # Data e nome attività (TESTO LIBERO)
         col1, col2 = st.columns(2)
         with col1:
             activity_date = st.date_input("Data attività", datetime.now(), key="activity_date")
         with col2:
-            activity_name = st.text_input("Nome attività", placeholder="Es: Caffè, Riunione...", key="activity_name")
+            activity_name = st.text_input("Nome attività*", placeholder="Scrivi qui... es: Caffè, Riunione, Pausa", key="activity_name")
         
-        # Orario inizio e fine
+        # Orario inizio e fine (DALLE ORE ALLE ORE)
+        st.write("**Orario attività:**")
         col3, col4 = st.columns(2)
         with col3:
-            start_time = st.time_input("Ora inizio", datetime.now().time(), key="start_time")
+            start_time = st.time_input("Dalle ore", datetime.now().time(), key="start_time")
         with col4:
-            end_time = st.time_input("Ora fine", (datetime.now() + timedelta(hours=1)).time(), key="end_time")
+            end_time = st.time_input("Alle ore", (datetime.now() + timedelta(hours=1)).time(), key="end_time")
         
         # Colore personalizzato
         activity_color = st.color_picker("Colore attività", "#3498db", key="activity_color")
@@ -142,9 +143,9 @@ def create_activity_diary():
     if st.session_state.activities:
         st.sidebar.subheader("📋 Attività Salvate")
         for i, activity in enumerate(st.session_state.activities):
-            with st.sidebar.expander(f"🕒 {activity['start'].strftime('%H:%M')} - {activity['name']}", False):
+            with st.sidebar.expander(f"🕒 {activity['start'].strftime('%H:%M')}-{activity['end'].strftime('%H:%M')} {activity['name']}", False):
                 st.write(f"**Data:** {activity['start'].strftime('%d/%m/%Y')}")
-                st.write(f"**Ora:** {activity['start'].strftime('%H:%M')} - {activity['end'].strftime('%H:%M')}")
+                st.write(f"**Orario:** {activity['start'].strftime('%H:%M')} - {activity['end'].strftime('%H:%M')}")
                 st.write(f"**Colore:** {activity['color']}")
                 if activity['note']:
                     st.write(f"**Note:** {activity['note']}")
@@ -157,14 +158,19 @@ def create_activity_diary():
 # FUNZIONE PRINCIPALE DI ANALISI - VERSIONE COMPLETA ORIGINALE
 # =============================================================================
 
-def calculate_triple_metrics(total_hours, day_offset, actual_date, is_sleep_period=False, health_profile_factor=0.5):
+def calculate_triple_metrics(total_hours, actual_date, is_sleep_period=False, health_profile_factor=0.5):
     """Le tue funzioni COMPLETE di analisi con tutte le metriche"""
-    np.random.seed(123 + day_offset)
+    np.random.seed(123 + int(actual_date.timestamp()))
     
     day_weight = 0.9 if actual_date.weekday() < 5 else 1.1
     duration_factor = min(1.0, total_hours / 8.0)
 
-    # Metriche sonno (se applicabile)
+    # Metriche sonno SOLO SE è periodo notturno
+    sleep_metrics = {
+        'sleep_duration': None, 'sleep_efficiency': None, 'sleep_coherence': None,
+        'sleep_hr': None, 'sleep_rem': None, 'sleep_deep': None, 'sleep_wakeups': None,
+    }
+    
     if is_sleep_period and total_hours >= 6:
         sleep_metrics = {
             'sleep_duration': min(8.0, total_hours * 0.9),
@@ -174,11 +180,6 @@ def calculate_triple_metrics(total_hours, day_offset, actual_date, is_sleep_peri
             'sleep_rem': min(2.0, total_hours * 0.25),
             'sleep_deep': min(1.5, total_hours * 0.2),
             'sleep_wakeups': max(0, int(total_hours * 0.5)),
-        }
-    else:
-        sleep_metrics = {
-            'sleep_duration': None, 'sleep_efficiency': None, 'sleep_coherence': None,
-            'sleep_hr': None, 'sleep_rem': None, 'sleep_deep': None, 'sleep_wakeups': None,
         }
 
     # 1. KUBIOS STYLE (alta sensibilità)
@@ -379,57 +380,59 @@ def create_timeline_plot_with_activities(time_labels, sdnn_data, rmssd_data, hr_
     return fig
 
 def create_sleep_analysis(metrics):
-    """Crea l'analisi completa del sonno"""
-    
-    st.header("😴 Analisi Qualità del Sonno")
+    """Crea l'analisi completa del sonno SOLO SE c'è periodo notturno"""
     
     sleep_data = metrics['our_algo']
     duration = sleep_data.get('sleep_duration', 0)
-    efficiency = sleep_data.get('sleep_efficiency', 0)
-    coherence = sleep_data.get('sleep_coherence', 0)
-    hr_night = sleep_data.get('sleep_hr', 0)
-    rem = sleep_data.get('sleep_rem', 0)
-    deep = sleep_data.get('sleep_deep', 0)
-    wakeups = sleep_data.get('sleep_wakeups', 0)
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📊 Metriche Sonno")
+    # MOSTRA ANALISI SONNO SOLO SE C'È DATI SONNO
+    if duration is not None and duration > 0:
+        st.header("😴 Analisi Qualità del Sonno")
         
-        sleep_metrics = [
-            ('Durata Sonno', duration, 'h', '#3498db'),
-            ('Efficienza', efficiency, '%', '#e74c3c'),
-            ('Coerenza Notturna', coherence, '%', '#f39c12'),
-            ('HR Medio Notte', hr_night, 'bpm', '#9b59b6'),
-            ('Sonno REM', rem, 'h', '#34495e'),
-            ('Sonno Profondo', deep, 'h', '#2ecc71'),
-            ('Risvegli', wakeups, '', '#1abc9c')
-        ]
+        efficiency = sleep_data.get('sleep_efficiency', 0)
+        coherence = sleep_data.get('sleep_coherence', 0)
+        hr_night = sleep_data.get('sleep_hr', 0)
+        rem = sleep_data.get('sleep_rem', 0)
+        deep = sleep_data.get('sleep_deep', 0)
+        wakeups = sleep_data.get('sleep_wakeups', 0)
         
-        names = [f"{metric[0]}" for metric in sleep_metrics]
-        values = [metric[1] for metric in sleep_metrics]
-        colors = [metric[3] for metric in sleep_metrics]
+        col1, col2 = st.columns(2)
         
-        fig_sleep = go.Figure(go.Bar(
-            x=values, y=names,
-            orientation='h',
-            marker_color=colors
-        ))
+        with col1:
+            st.subheader("📊 Metriche Sonno")
+            
+            sleep_metrics = [
+                ('Durata Sonno', duration, 'h', '#3498db'),
+                ('Efficienza', efficiency, '%', '#e74c3c'),
+                ('Coerenza Notturna', coherence, '%', '#f39c12'),
+                ('HR Medio Notte', hr_night, 'bpm', '#9b59b6'),
+                ('Sonno REM', rem, 'h', '#34495e'),
+                ('Sonno Profondo', deep, 'h', '#2ecc71'),
+                ('Risvegli', wakeups, '', '#1abc9c')
+            ]
+            
+            names = [f"{metric[0]}" for metric in sleep_metrics]
+            values = [metric[1] for metric in sleep_metrics]
+            colors = [metric[3] for metric in sleep_metrics]
+            
+            fig_sleep = go.Figure(go.Bar(
+                x=values, y=names,
+                orientation='h',
+                marker_color=colors
+            ))
+            
+            fig_sleep.update_layout(
+                title="Metriche Sonno Dettagliate",
+                xaxis_title="Valori",
+                height=400,
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig_sleep, use_container_width=True)
         
-        fig_sleep.update_layout(
-            title="Metriche Sonno Dettagliate",
-            xaxis_title="Valori",
-            height=400,
-            showlegend=False
-        )
-        
-        st.plotly_chart(fig_sleep, use_container_width=True)
-    
-    with col2:
-        st.subheader("🎯 Valutazione Qualità Sonno")
-        
-        if duration > 0:
+        with col2:
+            st.subheader("🎯 Valutazione Qualità Sonno")
+            
             if efficiency > 90 and duration >= 7 and wakeups <= 2:
                 valutazione = "🎯 OTTIMA qualità del sonno"
                 colore = "#2ecc71"
@@ -452,17 +455,13 @@ def create_sleep_analysis(metrics):
             </div>
             """, unsafe_allow_html=True)
             
-            if duration > 0:
-                fig_pie = go.Figure(go.Pie(
-                    labels=['Sonno Leggero', 'Sonno REM', 'Sonno Profondo'],
-                    values=[duration - rem - deep, rem, deep],
-                    marker_colors=['#3498db', '#e74c3c', '#2ecc71']
-                ))
-                fig_pie.update_layout(title="Composizione Sonno")
-                st.plotly_chart(fig_pie, use_container_width=True)
-        
-        else:
-            st.info("💤 **Dati sonno non disponibili**")
+            fig_pie = go.Figure(go.Pie(
+                labels=['Sonno Leggero', 'Sonno REM', 'Sonno Profondo'],
+                values=[duration - rem - deep, rem, deep],
+                marker_colors=['#3498db', '#e74c3c', '#2ecc71']
+            ))
+            fig_pie.update_layout(title="Composizione Sonno")
+            st.plotly_chart(fig_pie, use_container_width=True)
 
 def create_frequency_analysis(metrics):
     """Analisi approfondita del dominio delle frequenze"""
@@ -640,7 +639,7 @@ def create_complete_analysis_dashboard(metrics, start_datetime):
     timeline_fig = create_timeline_plot_with_activities(time_labels, sdnn_data, rmssd_data, hr_data, metrics['our_algo']['recording_hours'], start_datetime)
     st.plotly_chart(timeline_fig, use_container_width=True)
     
-    # 8. ANALISI SONNO
+    # 8. ANALISI SONNO (SOLO SE C'È)
     create_sleep_analysis(metrics)
 
 # =============================================================================
@@ -666,8 +665,19 @@ with st.sidebar:
     uploaded_file = st.file_uploader(
         "Seleziona file IBI/RR intervals",
         type=['csv', 'txt', 'xlsx'],
-        help="Supporta: CSV, TXT, Excel con colonne RR/IBI intervals"
+        help="Supporta: CSV, TXT, Excel con colonne RR/IBI intervals",
+        key="file_uploader"
     )
+    
+    # SE IL FILE È CARICATO, IMPOSTA AUTOMATICAMENTE DATA/ORA
+    if uploaded_file is not None:
+        # Usa data/ora attuale per la registrazione
+        default_start = datetime.now()
+        default_end = default_start + timedelta(hours=24)
+    else:
+        # Valori di default per analisi simulata
+        default_start = datetime.now()
+        default_end = default_start + timedelta(hours=24)
     
     st.markdown("---")
     st.header("⚙️ Impostazioni Analisi")
@@ -677,15 +687,15 @@ with st.sidebar:
     
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input("Data inizio", datetime.now(), key="analysis_start_date")
+        start_date = st.date_input("Data inizio", default_start.date(), key="analysis_start_date")
     with col2:
-        start_time = st.time_input("Ora inizio", datetime.now().time(), key="analysis_start_time")
+        start_time = st.time_input("Ora inizio", default_start.time(), key="analysis_start_time")
     
     col3, col4 = st.columns(2)
     with col3:
-        end_date = st.date_input("Data fine", datetime.now(), key="analysis_end_date")
+        end_date = st.date_input("Data fine", default_end.date(), key="analysis_end_date")
     with col4:
-        end_time = st.time_input("Ora fine", (datetime.now() + timedelta(hours=24)).time(), key="analysis_end_time")
+        end_time = st.time_input("Ora fine", default_end.time(), key="analysis_end_time")
     
     # Calcola durata automaticamente
     start_datetime = datetime.combine(start_date, start_time)
@@ -696,7 +706,11 @@ with st.sidebar:
         st.error("❌ La data/ora di fine deve essere successiva all'inizio")
         recording_hours = 24.0
     else:
-        st.info(f"⏱️ Durata registrazione: {recording_hours:.1f} ore")
+        st.info(f"⏱️ **Durata registrazione:** {recording_hours:.1f} ore")
+        st.info(f"📅 **Periodo:** {start_datetime.strftime('%d/%m %H:%M')} → {end_datetime.strftime('%d/%m %H:%M')}")
+    
+    # Determina se è periodo notturno
+    is_night_period = (start_datetime.hour >= 22 or start_datetime.hour <= 6) and recording_hours >= 6
     
     # Altre impostazioni
     health_factor = st.slider(
@@ -705,7 +719,8 @@ with st.sidebar:
         help="0.1 = Sedentario, 1.0 = Atleta"
     )
     
-    include_sleep = st.checkbox("Includi analisi sonno", True)
+    include_sleep = st.checkbox("Includi analisi sonno", is_night_period, 
+                               help="Automaticamente attivo per periodi notturni")
     
     analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True)
 
@@ -726,8 +741,7 @@ if analyze_btn:
                 if hrv_metrics:
                     st.success("✅ **ANALISI FILE COMPLETATA!**")
                     
-                    is_sleep_time = start_datetime.hour >= 22 or start_datetime.hour <= 6
-                    
+                    # TUTTI I DATI SONO RELATIVI ALLA FINESTRA TEMPORALE SELEZIONATA
                     metrics = {
                         'our_algo': {
                             'sdnn': hrv_metrics['sdnn'],
@@ -737,7 +751,7 @@ if analyze_btn:
                             'hr_max': min(180, hrv_metrics['hr_mean'] + 30),
                             'actual_date': start_datetime,
                             'recording_hours': recording_hours,
-                            'is_sleep_period': is_sleep_time,
+                            'is_sleep_period': include_sleep and is_night_period,
                             'health_profile_factor': health_factor,
                             'total_power': hrv_metrics['sdnn'] ** 2 * 10,
                             'vlf': hrv_metrics['sdnn'] ** 2 * 1,
@@ -774,16 +788,16 @@ if analyze_btn:
                 st.error(f"❌ Errore nel processare il file: {e}")
         
         else:
-            # ANALISI STANDARD (simulata)
+            # ANALISI STANDARD (simulata) - TUTTI DATI RELATIVI ALLA FINESTRA SELEZIONATA
             metrics = calculate_triple_metrics(
                 total_hours=recording_hours,
-                day_offset=0, 
                 actual_date=start_datetime,
-                is_sleep_period=include_sleep and recording_hours >= 6,
+                is_sleep_period=include_sleep and is_night_period,
                 health_profile_factor=health_factor
             )
             
             st.success("✅ **ANALISI SIMULATA COMPLETATA!**")
+            st.info(f"📊 **Tutti i dati si riferiscono al periodo:** {start_datetime.strftime('%d/%m %H:%M')} - {end_datetime.strftime('%d/%m %H:%M')}")
             create_complete_analysis_dashboard(metrics, start_datetime)
 
 else:
@@ -799,25 +813,27 @@ else:
         - CSV, TXT, Excel
         - Colonne: RR, IBI, Interval
         - Valori in ms
+        
+        **⚠️ Attenzione:** I dati saranno analizzati solo nel periodo selezionato!
         """)
         
-        st.subheader("🆕 Nuove Funzionalità")
+        st.subheader("🆕 Diario Attività")
         st.markdown("""
-        - 📝 **Diario Attività** completo
+        - ✏️ **Scrivi attività libere**
+        - 📅 **Scegli data e orario**
         - 🎨 **Colori personalizzabili**
-        - 📅 **Data/ora specifiche**
-        - ⏰ **Timeline con attività**
+        - ⏰ **Timeline integrata**
         """)
     
     with col2:
-        st.subheader("🎯 Cosa include:")
+        st.subheader("🎯 Analisi HRV Completa")
         st.markdown("""
-        - ✅ Analisi HRV completa
-        - 📊 3 algoritmi comparati
+        - ✅ 3 algoritmi comparati
+        - 📊 Metriche temporali e frequenziali
         - 🔄 Poincaré Plot
-        - 📡 Analisi frequenziale
-        - 😴 Analisi sonno
-        - ⏰ Timeline interattiva
+        - 😴 Analisi sonno (solo se notte)
+        - ⏰ Timeline con attività
+        - 🎯 Valutazione clinica
         """)
 
 # Footer
