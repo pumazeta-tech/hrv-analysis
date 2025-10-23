@@ -75,27 +75,83 @@ def calculate_hrv_metrics_from_rr(rr_intervals):
         'total_duration': np.sum(rr_intervals) / 60000
     }
 
-def create_rr_timeline_plot(rr_intervals):
-    """Crea grafico timeline degli RR intervals"""
-    fig = go.Figure()
+# =============================================================================
+# DIARIO ATTIVITÀ COMPLETO
+# =============================================================================
+
+def create_activity_diary():
+    """Crea un diario delle attività con orari specifici"""
+    st.sidebar.header("📝 Diario Attività")
     
-    fig.add_trace(go.Scatter(
-        x=np.arange(len(rr_intervals)), 
-        y=rr_intervals,
-        mode='lines',
-        name='RR Intervals',
-        line=dict(color='#e74c3c', width=2)
-    ))
+    # Inizializza session state per attività
+    if 'activities' not in st.session_state:
+        st.session_state.activities = []
     
-    fig.update_layout(
-        title="📈 RR Intervals Timeline",
-        xaxis_title="Numero Battito",
-        yaxis_title="RR Interval (ms)",
-        template='plotly_white',
-        height=400
-    )
+    with st.sidebar.expander("➕ Aggiungi Attività", expanded=False):
+        # Data e nome attività
+        col1, col2 = st.columns(2)
+        with col1:
+            activity_date = st.date_input("Data attività", datetime.now(), key="activity_date")
+        with col2:
+            activity_name = st.text_input("Nome attività", placeholder="Es: Caffè, Riunione...", key="activity_name")
+        
+        # Orario inizio e fine
+        col3, col4 = st.columns(2)
+        with col3:
+            start_time = st.time_input("Ora inizio", datetime.now().time(), key="start_time")
+        with col4:
+            end_time = st.time_input("Ora fine", (datetime.now() + timedelta(hours=1)).time(), key="end_time")
+        
+        # Colore personalizzato
+        activity_color = st.color_picker("Colore attività", "#3498db", key="activity_color")
+        
+        # Note opzionali
+        activity_note = st.text_input("Note (opzionale)", placeholder="Descrizione...", key="activity_note")
+        
+        # Pulsanti salva e cancella
+        col5, col6 = st.columns(2)
+        with col5:
+            if st.button("💾 Salva Attività", use_container_width=True, key="save_activity"):
+                if activity_name.strip():
+                    # Combina data e ora
+                    start_datetime = datetime.combine(activity_date, start_time)
+                    end_datetime = datetime.combine(activity_date, end_time)
+                    
+                    # Verifica che l'orario di fine sia dopo l'orario di inizio
+                    if end_datetime <= start_datetime:
+                        st.error("❌ L'orario di fine deve essere successivo all'orario di inizio")
+                    else:
+                        activity = {
+                            'name': activity_name.strip(),
+                            'start': start_datetime,
+                            'end': end_datetime,
+                            'color': activity_color,
+                            'note': activity_note
+                        }
+                        st.session_state.activities.append(activity)
+                        st.success("✅ Attività salvata!")
+                else:
+                    st.error("❌ Inserisci un nome per l'attività")
+        
+        with col6:
+            if st.button("🗑️ Cancella Tutto", use_container_width=True, key="clear_activities"):
+                st.session_state.activities = []
+                st.success("✅ Tutte le attività cancellate!")
     
-    return fig
+    # Mostra attività salvate
+    if st.session_state.activities:
+        st.sidebar.subheader("📋 Attività Salvate")
+        for i, activity in enumerate(st.session_state.activities):
+            with st.sidebar.expander(f"🕒 {activity['start'].strftime('%H:%M')} - {activity['name']}", False):
+                st.write(f"**Data:** {activity['start'].strftime('%d/%m/%Y')}")
+                st.write(f"**Ora:** {activity['start'].strftime('%H:%M')} - {activity['end'].strftime('%H:%M')}")
+                st.write(f"**Colore:** {activity['color']}")
+                if activity['note']:
+                    st.write(f"**Note:** {activity['note']}")
+                
+                if st.button(f"❌ Elimina", key=f"delete_activity_{i}"):
+                    st.session_state.activities.pop(i)
+                    st.rerun()
 
 # =============================================================================
 # FUNZIONE PRINCIPALE DI ANALISI - VERSIONE COMPLETA ORIGINALE
@@ -199,13 +255,17 @@ def calculate_triple_metrics(total_hours, day_offset, actual_date, is_sleep_peri
 # FUNZIONI AGGIUNTE PER COMPLETARE TUTTO - ORIGINALI
 # =============================================================================
 
-def generate_timeline_data(total_hours, actual_datetime):
+def generate_timeline_data(start_datetime, total_hours):
     """Genera dati per il grafico temporale con attività"""
     np.random.seed(42)
     
     total_points = int(total_hours * 4)
     hours = np.linspace(0, total_hours, total_points)
-    start_hour = actual_datetime.hour
+    
+    # Crea timeline reale basata su start_datetime
+    time_labels = [start_datetime + timedelta(hours=float(hour)) for hour in hours]
+    
+    start_hour = start_datetime.hour + start_datetime.minute/60
     
     shifted_hours = [(h + start_hour) % 24 for h in hours]
     
@@ -221,15 +281,12 @@ def generate_timeline_data(total_hours, actual_datetime):
     rmssd_data = np.maximum(rmssd_data, 10)
     hr_data = np.clip(hr_data, 45, 120)
     
-    return hours, sdnn_data, rmssd_data, hr_data
+    return time_labels, sdnn_data, rmssd_data, hr_data
 
-def create_timeline_plot(hours, sdnn_data, rmssd_data, hr_data, total_hours, actual_datetime):
-    """Crea il grafico temporale con SDNN, RMSSD e HR con ORE REALI"""
+def create_timeline_plot_with_activities(time_labels, sdnn_data, rmssd_data, hr_data, total_hours, start_datetime):
+    """Crea il grafico temporale con SDNN, RMSSD e HR con attività personalizzate"""
     
     fig = go.Figure()
-    
-    # Converti ore in datetime reali
-    time_labels = [actual_datetime + timedelta(hours=float(hour)) for hour in hours]
     
     # SDNN
     fig.add_trace(go.Scatter(
@@ -256,45 +313,43 @@ def create_timeline_plot(hours, sdnn_data, rmssd_data, hr_data, total_hours, act
         yaxis='y2'
     ))
     
-    # Aggiungi aree attività con orari reali
-    activities = [
-        (0, 7, 'Sonno', '#3498db'),
-        (7, 8, 'Colazione', '#f1c40f'),
-        (8, 12, 'Lavoro', '#e74c3c'),
-        (12, 13, 'Pranzo', '#2ecc71'),
-        (13, 17, 'Lavoro', '#e74c3c'),
-        (17, 18, 'Allenamento', '#e67e22'),
-        (19, 20, 'Cena', '#2ecc71'),
-        (22, 24, 'Sonno', '#3498db')
-    ]
-    
-    for start, end, activity, color in activities:
-        if start < total_hours:
-            start_time = actual_datetime + timedelta(hours=float(start))
-            end_time = actual_datetime + timedelta(hours=float(min(end, total_hours)))
+    # Aggiungi attività dal diario con SFONDO COLORATO
+    if 'activities' in st.session_state and st.session_state.activities:
+        for i, activity in enumerate(st.session_state.activities):
+            # Verifica se l'attività ricade nel periodo di registrazione
+            recording_end = start_datetime + timedelta(hours=total_hours)
             
-            fig.add_vrect(
-                x0=start_time, x1=end_time,
-                fillcolor=color, opacity=0.2,
-                line_width=0, 
-                annotation_text=activity,
-                annotation_position="top left",
-                annotation=dict(font_size=10, font_color=color)
-            )
+            if (activity['end'] >= start_datetime and activity['start'] <= recording_end):
+                # Calcola l'intersezione tra attività e periodo di registrazione
+                activity_start = max(activity['start'], start_datetime)
+                activity_end = min(activity['end'], recording_end)
+                
+                if activity_start < activity_end:
+                    fig.add_vrect(
+                        x0=activity_start, x1=activity_end,
+                        fillcolor=activity['color'], 
+                        opacity=0.3,  # Sfondo colorato trasparente
+                        line_width=2, 
+                        line_color=activity['color'],
+                        annotation_text=activity['name'],
+                        annotation_position="top left",
+                        annotation=dict(
+                            font_size=12, 
+                            font_color=activity['color'],
+                            font_family="Arial"
+                        )
+                    )
     
     # Formatta l'asse X con orari
     if total_hours <= 6:
-        tick_interval = "30min"
         dtick = 30 * 60 * 1000
     elif total_hours <= 12:
-        tick_interval = "60min" 
         dtick = 60 * 60 * 1000
     else:
-        tick_interval = "120min"
         dtick = 120 * 60 * 1000
     
     fig.update_layout(
-        title=f'📈 Variabilità Cardiaca - {actual_datetime.strftime("%d/%m/%Y")}',
+        title=f'📈 Variabilità Cardiaca - {start_datetime.strftime("%d/%m/%Y %H:%M")}',
         xaxis_title='Ora del Giorno',
         yaxis_title='Variabilità (ms)',
         yaxis2=dict(
@@ -408,12 +463,6 @@ def create_sleep_analysis(metrics):
         
         else:
             st.info("💤 **Dati sonno non disponibili**")
-            st.markdown("""
-            Per vedere l'analisi del sonno:
-            - Registra durante la notte (22:00-06:00)
-            - Durata minima 6 ore
-            - Attiva 'Includi analisi sonno'
-            """)
 
 def create_frequency_analysis(metrics):
     """Analisi approfondita del dominio delle frequenze"""
@@ -460,41 +509,11 @@ def create_frequency_analysis(metrics):
         )
         
         st.plotly_chart(fig_total, use_container_width=True)
-    
-    st.subheader("📊 Dettaglio Valori Frequenziali")
-    
-    freq_data = {
-        'Parametro': ['Total Power', 'VLF', 'LF', 'HF', 'LF/HF Ratio'],
-        'Nostro Algo': [
-            f"{metrics['our_algo']['total_power']:.0f}",
-            f"{metrics['our_algo']['vlf']:.0f}",
-            f"{metrics['our_algo']['lf']:.0f}", 
-            f"{metrics['our_algo']['hf']:.0f}",
-            f"{metrics['our_algo']['lf_hf_ratio']:.2f}"
-        ],
-        'EmWave Style': [
-            f"{metrics['emwave_style']['total_power']:.0f}",
-            f"{metrics['emwave_style']['vlf']:.0f}",
-            f"{metrics['emwave_style']['lf']:.0f}",
-            f"{metrics['emwave_style']['hf']:.0f}",
-            f"{metrics['emwave_style']['lf_hf_ratio']:.2f}"
-        ],
-        'Kubios Style': [
-            f"{metrics['kubios_style']['total_power']:.0f}",
-            f"{metrics['kubios_style']['vlf']:.0f}",
-            f"{metrics['kubios_style']['lf']:.0f}",
-            f"{metrics['kubios_style']['hf']:.0f}", 
-            f"{metrics['kubios_style']['lf_hf_ratio']:.2f}"
-        ]
-    }
-    
-    df_freq = pd.DataFrame(freq_data)
-    st.dataframe(df_freq, use_container_width=True)
 
-def create_complete_analysis_dashboard(metrics):
-    """Crea un dashboard COMPLETO con TUTTE le funzioni originali"""
+def create_complete_analysis_dashboard(metrics, start_datetime):
+    """Crea un dashboard COMPLETO con TUTTE le funzioni"""
     
-    # 1. METRICHE PRINCIPALI - TAB COMPARATIVA
+    # 1. METRICHE PRINCIPALI
     st.header("📊 Analisi Comparativa Completa")
     
     col1, col2, col3 = st.columns(3)
@@ -517,7 +536,7 @@ def create_complete_analysis_dashboard(metrics):
         st.metric("RMSSD", f"{metrics['kubios_style']['rmssd']:.1f} ms")
         st.metric("Coerenza", f"{metrics['kubios_style']['coherence']:.1f}%")
     
-    # 2. GRAFICO COMPARATIVO AVANZATO
+    # 2. GRAFICO COMPARATIVO
     st.subheader("📈 Confronto Dettagliato Algoritmi")
     
     algorithms = ['Nostro', 'EmWave', 'Kubios']
@@ -529,7 +548,7 @@ def create_complete_analysis_dashboard(metrics):
     fig_comparison.update_layout(title="Confronto SDNN e RMSSD tra Algoritmi", barmode='group')
     st.plotly_chart(fig_comparison, use_container_width=True)
     
-    # 3. POWER SPECTRUM ANALYSIS
+    # 3. POWER SPECTRUM
     st.subheader("🔬 Analisi Power Spectrum")
     
     col1, col2 = st.columns(2)
@@ -548,7 +567,7 @@ def create_complete_analysis_dashboard(metrics):
         fig_ratio.add_hline(y=1.5, line_dash="dash", line_color="red", annotation_text="Ideale")
         st.plotly_chart(fig_ratio, use_container_width=True)
     
-    # 4. POINCARÉ PLOT AVANZATO
+    # 4. POINCARÉ PLOT
     st.subheader("🔄 Poincaré Plot - Analisi Non Lineare")
     
     np.random.seed(42)
@@ -567,11 +586,10 @@ def create_complete_analysis_dashboard(metrics):
     
     rr_n_array = np.array(rr_n)
     rr_n1_array = np.array(rr_n1)
-    rr_intervals_array = np.array(rr_intervals)
     
     differences = rr_n_array - rr_n1_array
     sd1 = np.sqrt(0.5 * np.var(differences))
-    sd2 = np.sqrt(2 * np.var(rr_intervals_array) - 0.5 * np.var(differences))
+    sd2 = np.sqrt(2 * np.var(rr_intervals) - 0.5 * np.var(differences))
     
     fig_poincare = go.Figure()
     fig_poincare.add_trace(go.Scatter(x=rr_n_array, y=rr_n1_array, mode='markers', marker=dict(size=6, color='#3498db', opacity=0.6), name='Battiti RR'))
@@ -583,7 +601,7 @@ def create_complete_analysis_dashboard(metrics):
     fig_poincare.update_layout(title=f'Poincaré Plot - SD1: {sd1:.1f}ms, SD2: {sd2:.1f}ms')
     st.plotly_chart(fig_poincare, use_container_width=True)
     
-    # 5. ANALISI FREQUENZIALE DETTAGLIATA
+    # 5. ANALISI FREQUENZIALE
     create_frequency_analysis(metrics)
     
     # 6. VALUTAZIONE CLINICA
@@ -610,55 +628,23 @@ def create_complete_analysis_dashboard(metrics):
     st.markdown(f"""
     <div style='padding: 20px; background-color: {colore}20; border-radius: 10px; border-left: 4px solid {colore};'>
         <h4>📋 Valutazione: {valutazione}</h4>
-        <p><strong>SDNN:</strong> {sdnn_val:.1f} ms | <strong>Profilo Salute:</strong> {metrics['our_algo']['health_profile_factor']}</p>
+        <p><strong>SDNN:</strong> {sdnn_val:.1f} ms</p>
         <p><strong>💡 Raccomandazioni:</strong> {raccomandazioni}</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # 7. GRAFICO TEMPORALE COMPLETO
+    # 7. GRAFICO TEMPORALE CON ATTIVITÀ
     st.header("⏰ Analisi Temporale - SDNN, RMSSD e HR")
     
-    hours, sdnn_data, rmssd_data, hr_data = generate_timeline_data(
-        metrics['our_algo']['recording_hours'],
-        metrics['our_algo']['actual_date']
-    )
-    
-    timeline_fig = create_timeline_plot(
-        hours, sdnn_data, rmssd_data, hr_data,
-        metrics['our_algo']['recording_hours'],
-        metrics['our_algo']['actual_date']
-    )
-    
+    time_labels, sdnn_data, rmssd_data, hr_data = generate_timeline_data(start_datetime, metrics['our_algo']['recording_hours'])
+    timeline_fig = create_timeline_plot_with_activities(time_labels, sdnn_data, rmssd_data, hr_data, metrics['our_algo']['recording_hours'], start_datetime)
     st.plotly_chart(timeline_fig, use_container_width=True)
     
-    # 8. ANALISI SONNO - SEMPRE VISIBILE
+    # 8. ANALISI SONNO
     create_sleep_analysis(metrics)
-    
-    # 9. RIEPILOGO FINALE
-    st.header("📋 Riepilogo Completo Analisi")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("✅ Punti di Forza")
-        st.markdown("""
-        - Variabilità cardiaca nella norma o superiore
-        - Bilancio autonomico equilibrato  
-        - Recupero parasimpatico adeguato
-        - Coerenza cardiaca soddisfacente
-        """)
-    
-    with col2:
-        st.subheader("🎯 Raccomandazioni Finali")
-        st.markdown("""
-        - Continuare con attività fisica regolare
-        - Praticare tecniche di respirazione
-        - Mantenere ritmi sonno-veglia regolari
-        - Monitoraggio continuo per ottimizzazione
-        """)
 
 # =============================================================================
-# INTERFACCIA STREAMLIT PRINCIPALE - CODICE PULITO
+# INTERFACCIA STREAMLIT PRINCIPALE
 # =============================================================================
 
 st.set_page_config(
@@ -668,7 +654,10 @@ st.set_page_config(
 )
 
 st.title("🏥 HRV ANALYTICS ULTIMATE")
-st.markdown("### **Piattaforma Completa** - Tutte le tue funzioni di analisi integrate")
+st.markdown("### **Piattaforma Completa** - Analisi HRV con Diario Attività")
+
+# DIARIO ATTIVITÀ (sempre visibile)
+create_activity_diary()
 
 # Sidebar configurazione
 with st.sidebar:
@@ -681,22 +670,44 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.header("⚙️ Analisi Simulata")
+    st.header("⚙️ Impostazioni Analisi")
     
+    # SELEZIONE DATA/ORA INIZIO E FINE
+    st.subheader("📅 Periodo Analisi")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input("Data inizio", datetime.now(), key="analysis_start_date")
+    with col2:
+        start_time = st.time_input("Ora inizio", datetime.now().time(), key="analysis_start_time")
+    
+    col3, col4 = st.columns(2)
+    with col3:
+        end_date = st.date_input("Data fine", datetime.now(), key="analysis_end_date")
+    with col4:
+        end_time = st.time_input("Ora fine", (datetime.now() + timedelta(hours=24)).time(), key="analysis_end_time")
+    
+    # Calcola durata automaticamente
+    start_datetime = datetime.combine(start_date, start_time)
+    end_datetime = datetime.combine(end_date, end_time)
+    recording_hours = (end_datetime - start_datetime).total_seconds() / 3600
+    
+    if recording_hours <= 0:
+        st.error("❌ La data/ora di fine deve essere successiva all'inizio")
+        recording_hours = 24.0
+    else:
+        st.info(f"⏱️ Durata registrazione: {recording_hours:.1f} ore")
+    
+    # Altre impostazioni
     health_factor = st.slider(
         "Profilo Salute", 
         min_value=0.1, max_value=1.0, value=0.5,
         help="0.1 = Sedentario, 1.0 = Atleta"
     )
     
-    recording_hours = st.slider(
-        "Durata Registrazione (ore)", 
-        min_value=0.1, max_value=24.0, value=24.0, step=0.1
-    )
-    
     include_sleep = st.checkbox("Includi analisi sonno", True)
     
-    analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary")
+    analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True)
 
 # Main Content
 if analyze_btn:
@@ -715,9 +726,7 @@ if analyze_btn:
                 if hrv_metrics:
                     st.success("✅ **ANALISI FILE COMPLETATA!**")
                     
-                    # Crea metriche compatibili
-                    current_hour = datetime.now().hour
-                    is_sleep_time = current_hour >= 22 or current_hour <= 6
+                    is_sleep_time = start_datetime.hour >= 22 or start_datetime.hour <= 6
                     
                     metrics = {
                         'our_algo': {
@@ -726,30 +735,20 @@ if analyze_btn:
                             'hr_mean': hrv_metrics['hr_mean'],
                             'hr_min': max(40, hrv_metrics['hr_mean'] - 15),
                             'hr_max': min(180, hrv_metrics['hr_mean'] + 30),
-                            'hr_sd': hrv_metrics['sdnn'] / 10,
-                            'actual_date': datetime.now(),
-                            'recording_hours': hrv_metrics['total_duration'] / 60,
+                            'actual_date': start_datetime,
+                            'recording_hours': recording_hours,
                             'is_sleep_period': is_sleep_time,
-                            'health_profile_factor': 0.5,
+                            'health_profile_factor': health_factor,
                             'total_power': hrv_metrics['sdnn'] ** 2 * 10,
                             'vlf': hrv_metrics['sdnn'] ** 2 * 1,
                             'lf': hrv_metrics['sdnn'] ** 2 * 4,
                             'hf': hrv_metrics['sdnn'] ** 2 * 5,
                             'lf_hf_ratio': 0.8 + (hrv_metrics['rmssd'] / 100),
                             'coherence': min(95, 40 + (hrv_metrics['sdnn'] / 2)),
-                            # Metriche sonno
-                            'sleep_duration': min(8.0, (hrv_metrics['total_duration'] / 60) * 0.9) if is_sleep_time else 7.5,
-                            'sleep_efficiency': min(95, 85 + np.random.normal(0, 5)) if is_sleep_time else 88.0,
-                            'sleep_coherence': 65 + np.random.normal(0, 3) if is_sleep_time else 72.0,
-                            'sleep_hr': 58 + np.random.normal(0, 2) if is_sleep_time else 56.0,
-                            'sleep_rem': min(2.0, (hrv_metrics['total_duration'] / 60) * 0.25) if is_sleep_time else 1.8,
-                            'sleep_deep': min(1.5, (hrv_metrics['total_duration'] / 60) * 0.2) if is_sleep_time else 1.9,
-                            'sleep_wakeups': max(0, int((hrv_metrics['total_duration'] / 60) * 0.5)) if is_sleep_time else 2,
                         },
                         'emwave_style': {
                             'sdnn': hrv_metrics['sdnn'] * 0.7,
                             'rmssd': hrv_metrics['rmssd'] * 0.7,
-                            'hr_mean': hrv_metrics['hr_mean'] + 2,
                             'total_power': hrv_metrics['sdnn'] ** 2 * 7,
                             'vlf': hrv_metrics['sdnn'] ** 2 * 0.7,
                             'lf': hrv_metrics['sdnn'] ** 2 * 2.8,
@@ -760,7 +759,6 @@ if analyze_btn:
                         'kubios_style': {
                             'sdnn': hrv_metrics['sdnn'] * 1.3,
                             'rmssd': hrv_metrics['rmssd'] * 1.3,
-                            'hr_mean': hrv_metrics['hr_mean'] - 2,
                             'total_power': hrv_metrics['sdnn'] ** 2 * 13,
                             'vlf': hrv_metrics['sdnn'] ** 2 * 1.3,
                             'lf': hrv_metrics['sdnn'] ** 2 * 5.2,
@@ -770,8 +768,7 @@ if analyze_btn:
                         }
                     }
                     
-                    # USA LA TUA ANALISI COMPLETA
-                    create_complete_analysis_dashboard(metrics)
+                    create_complete_analysis_dashboard(metrics, start_datetime)
                     
             except Exception as e:
                 st.error(f"❌ Errore nel processare il file: {e}")
@@ -781,17 +778,17 @@ if analyze_btn:
             metrics = calculate_triple_metrics(
                 total_hours=recording_hours,
                 day_offset=0, 
-                actual_date=datetime.now(),
+                actual_date=start_datetime,
                 is_sleep_period=include_sleep and recording_hours >= 6,
                 health_profile_factor=health_factor
             )
             
-            st.success("✅ **ANALISI SIMULATA COMPLETATA!** Tutti i dati sono pronti.")
-            create_complete_analysis_dashboard(metrics)
+            st.success("✅ **ANALISI SIMULATA COMPLETATA!**")
+            create_complete_analysis_dashboard(metrics, start_datetime)
 
 else:
     # Schermata iniziale
-    st.info("👆 **Carica un file IBI dalla sidebar o usa l'analisi simulata**")
+    st.info("👆 **Configura l'analisi dalla sidebar**")
     
     col1, col2 = st.columns(2)
     
@@ -801,18 +798,26 @@ else:
         **Formati supportati:**
         - CSV, TXT, Excel
         - Colonne: RR, IBI, Interval
-        - Valori numerici (ms)
+        - Valori in ms
+        """)
+        
+        st.subheader("🆕 Nuove Funzionalità")
+        st.markdown("""
+        - 📝 **Diario Attività** completo
+        - 🎨 **Colori personalizzabili**
+        - 📅 **Data/ora specifiche**
+        - ⏰ **Timeline con attività**
         """)
     
     with col2:
         st.subheader("🎯 Cosa include:")
         st.markdown("""
-        - ✅ **Analisi HRV COMPLETA**
-        - 📊 **Tutte le metriche** HRV
-        - 🔄 **Poincaré Plot** avanzato
-        - 📡 **Analisi frequenziale**
-        - 😴 **Analisi sonno** completa
-        - ⏰ **Timeline** interattiva
+        - ✅ Analisi HRV completa
+        - 📊 3 algoritmi comparati
+        - 🔄 Poincaré Plot
+        - 📡 Analisi frequenziale
+        - 😴 Analisi sonno
+        - ⏰ Timeline interattiva
         """)
 
 # Footer
