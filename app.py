@@ -10,6 +10,15 @@ import io
 import base64
 from matplotlib.patches import Ellipse
 import re
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+import tempfile
+from reportlab.lib.utils import ImageReader
+import matplotlib
+matplotlib.use('Agg')
 
 # =============================================================================
 # INIZIALIZZAZIONE SESSION STATE
@@ -38,6 +47,8 @@ def init_session_state():
         }
     if 'datetime_initialized' not in st.session_state:
         st.session_state.datetime_initialized = False
+    if 'recording_end_datetime' not in st.session_state:
+        st.session_state.recording_end_datetime = None
 
 # =============================================================================
 # FUNZIONI PER ESTRAZIONE DATA E ORA DAL FILE - CORRETTA
@@ -58,15 +69,15 @@ def extract_datetime_from_content(content):
     
     return None
 
-def estimate_recording_duration(rr_intervals):
-    """Stima la durata della registrazione dagli intervalli RR"""
+def calculate_recording_end_datetime(start_datetime, rr_intervals):
+    """Calcola la data/ora di fine registrazione in base agli IBI"""
     if len(rr_intervals) == 0:
-        return 1.0
+        return start_datetime + timedelta(hours=24)
     
     total_ms = np.sum(rr_intervals)
     duration_hours = total_ms / (1000 * 60 * 60)
     
-    return max(0.1, min(168.0, duration_hours))
+    return start_datetime + timedelta(hours=duration_hours)
 
 # =============================================================================
 # GESTIONE DATA/ORA AUTOMATICA MIGLIORATA
@@ -95,16 +106,21 @@ def update_analysis_datetimes(uploaded_file, rr_intervals=None):
             file_datetime = datetime.now()
             st.info("ℹ️ Usata data/ora corrente come fallback")
         
-        # Stima la durata
+        # Calcola la fine della registrazione dagli IBI
+        recording_end_dt = None
         if rr_intervals is not None and len(rr_intervals) > 0:
-            duration_hours = estimate_recording_duration(rr_intervals)
-            st.info(f"⏱️ **Durata stimata registrazione:** {duration_hours:.2f} ore")
+            recording_end_dt = calculate_recording_end_datetime(file_datetime, rr_intervals)
+            duration_hours = (recording_end_dt - file_datetime).total_seconds() / 3600
+            st.success(f"⏱️ **Fine registrazione calcolata:** {recording_end_dt.strftime('%d/%m/%Y %H:%M')}")
+            st.info(f"📊 **Durata registrazione:** {duration_hours:.2f} ore - {len(rr_intervals)} intervalli RR")
+            st.session_state.recording_end_datetime = recording_end_dt
         else:
-            duration_hours = 24.0  # Default 24 ore
+            duration_hours = 24.0
+            recording_end_dt = file_datetime + timedelta(hours=duration_hours)
             st.info("⏱️ **Durata default:** 24 ore (nessun dato RR rilevato)")
         
         start_dt = file_datetime
-        end_dt = start_dt + timedelta(hours=duration_hours)
+        end_dt = recording_end_dt
         
         # Aggiorna solo se non è già stato inizializzato o se è un nuovo file
         if not st.session_state.file_uploaded or not st.session_state.datetime_initialized:
@@ -122,6 +138,322 @@ def get_analysis_datetimes():
         st.session_state.analysis_datetimes['start_datetime'],
         st.session_state.analysis_datetimes['end_datetime']
     )
+
+# =============================================================================
+# FUNZIONE PER CREARE PDF PROFESSIONALE
+# =============================================================================
+
+def create_professional_pdf(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[]):
+    """Crea un PDF professionale identico al report allegato"""
+    
+    # Crea un buffer per il PDF
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=50, bottomMargin=50)
+    
+    # Stili
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        spaceAfter=30,
+        alignment=1,  # Centered
+        textColor=colors.HexColor('#2c3e50')
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=12,
+        spaceAfter=12,
+        textColor=colors.HexColor('#34495e')
+    )
+    
+    normal_style = styles['Normal']
+    
+    # Contenuto del PDF
+    story = []
+    
+    # Header
+    story.append(Paragraph("REPORT CARDIOLOGICO - ANALISI COMPLETA", title_style))
+    
+    # Data e periodo
+    period_text = f"{start_datetime.strftime('%d %B %Y - %H:%M')} ({selected_range} di rilevazione)"
+    story.append(Paragraph(period_text, normal_style))
+    story.append(Spacer(1, 20))
+    
+    # Informazioni paziente
+    patient_info = f"<b>PAZIENTE:</b> {user_profile.get('name', '')} {user_profile.get('surname', '')} | <b>ETÀ:</b> {user_profile.get('age', '')} | <b>SESSO:</b> {user_profile.get('gender', '')}"
+    story.append(Paragraph(patient_info, normal_style))
+    story.append(Spacer(1, 10))
+    
+    # 1. INDICI PRINCIPALI DEL DOMINIO DEL TEMPO
+    story.append(Paragraph("INDICI PRINCIPALI DEL DOMINIO DEL TEMPO", heading_style))
+    
+    time_domain_data = [
+        ['Parametro', 'Valore', 'Valutazione'],
+        ['SDNN Medio', f"{metrics['our_algo']['sdnn']:.1f} ms", get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))],
+        ['RMSSD Medio', f"{metrics['our_algo']['rmssd']:.1f} ms", get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))],
+        ['Freq. Cardiaca Media', f"{metrics['our_algo']['hr_mean']:.1f} bpm", get_hr_evaluation(metrics['our_algo']['hr_mean'])],
+        ['Coerenza Cardiaca', f"{metrics['our_algo']['coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['coherence'])]
+    ]
+    
+    time_domain_table = Table(time_domain_data, colWidths=[2*inch, 1.5*inch, 2*inch])
+    time_domain_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ecf0f1')),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7'))
+    ]))
+    
+    story.append(time_domain_table)
+    story.append(Spacer(1, 20))
+    
+    # 2. ANALISI POWER SPECTRUM
+    story.append(Paragraph("ANALISI POWER SPECTRUM E COMPONENTI FREQUENZIALI", heading_style))
+    
+    power_spectrum_data = [
+        ['Parametro', 'Valore', 'Valutazione'],
+        ['Total Power', f"{metrics['our_algo']['total_power']:.0f} ms²", get_power_evaluation(metrics['our_algo']['total_power'])],
+        ['Very Low Frequency', f"{metrics['our_algo']['vlf']:.0f} ms²", 'NORMALE'],
+        ['Low Frequency', f"{metrics['our_algo']['lf']:.0f} ms²", 'NORMALE'],
+        ['High Frequency', f"{metrics['our_algo']['hf']:.0f} ms²", 'NORMALE'],
+        ['LF/HF Ratio', f"{metrics['our_algo']['lf_hf_ratio']:.2f}", get_lf_hf_evaluation(metrics['our_algo']['lf_hf_ratio'])],
+        ['Coerenza Cardiaca', f"{metrics['our_algo']['coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['coherence'])]
+    ]
+    
+    power_spectrum_table = Table(power_spectrum_data, colWidths=[2*inch, 1.5*inch, 1.5*inch])
+    power_spectrum_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ecf0f1')),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7'))
+    ]))
+    
+    story.append(power_spectrum_table)
+    story.append(Spacer(1, 20))
+    
+    # 3. CONFRONTO ALGORITMI
+    story.append(Paragraph("CONFRONTO ALGORITMI HRV - ANALISI COMPARATIVA", heading_style))
+    
+    comparison_data = [
+        ['Parametro', 'Nostro Algo', 'EmWave Style', 'Kubios Style', 'Note'],
+        ['SDNN (ms)', f"{metrics['our_algo']['sdnn']:.1f}", f"{metrics['emwave_style']['sdnn']:.1f}", f"{metrics['kubios_style']['sdnn']:.1f}", '-'],
+        ['RMSSD (ms)', f"{metrics['our_algo']['rmssd']:.1f}", f"{metrics['emwave_style']['rmssd']:.1f}", f"{metrics['kubios_style']['rmssd']:.1f}", '-'],
+        ['Total Power', f"{metrics['our_algo']['total_power']:.0f}", f"{metrics['emwave_style']['total_power']:.0f}", f"{metrics['kubios_style']['total_power']:.0f}", '-'],
+        ['LF/HF Ratio', f"{metrics['our_algo']['lf_hf_ratio']:.2f}", f"{metrics['emwave_style']['lf_hf_ratio']:.2f}", f"{metrics['kubios_style']['lf_hf_ratio']:.2f}", 'Bilancio ottimale'],
+        ['Coerenza (%)', f"{metrics['our_algo']['coherence']:.1f}", f"{metrics['emwave_style']['coherence']:.1f}", f"{metrics['kubios_style']['coherence']:.1f}", 'Moderata'],
+        ['Freq. Card. Media', f"{metrics['our_algo']['hr_mean']:.1f}", f"{metrics['emwave_style']['hr_mean']:.1f}", f"{metrics['kubios_style']['hr_mean']:.1f}", '-']
+    ]
+    
+    comparison_table = Table(comparison_data, colWidths=[1.2*inch, 0.8*inch, 0.8*inch, 0.8*inch, 1.2*inch])
+    comparison_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 7),
+        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6'))
+    ]))
+    
+    story.append(comparison_table)
+    story.append(Spacer(1, 20))
+    
+    # 4. ANALISI SONNO (se disponibile)
+    if metrics['our_algo'].get('sleep_duration') and metrics['our_algo']['sleep_duration'] > 0:
+        story.append(Paragraph("ANALISI QUALITÀ DEL SONNO", heading_style))
+        
+        sleep_data = [
+            ['Metrica', 'Valore', 'Valutazione'],
+            ['Durata Sonno', f"{metrics['our_algo']['sleep_duration']:.1f} h", get_sleep_duration_evaluation(metrics['our_algo']['sleep_duration'])],
+            ['Efficienza Sonno', f"{metrics['our_algo']['sleep_efficiency']:.1f}%", get_sleep_efficiency_evaluation(metrics['our_algo']['sleep_efficiency'])],
+            ['Coerenza Notturna', f"{metrics['our_algo']['sleep_coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['sleep_coherence'])],
+            ['Freq. Card. Notturna', f"{metrics['our_algo']['sleep_hr']:.1f} bpm", get_hr_evaluation(metrics['our_algo']['sleep_hr'])],
+            ['Sonno REM', f"{metrics['our_algo']['sleep_rem']:.1f} h", 'NORMALE'],
+            ['Sonno Profondo', f"{metrics['our_algo']['sleep_deep']:.1f} h", 'NORMALE'],
+            ['Risvegli', f"{metrics['our_algo']['sleep_wakeups']:.0f}", get_wakeups_evaluation(metrics['our_algo']['sleep_wakeups'])]
+        ]
+        
+        sleep_table = Table(sleep_data, colWidths=[1.5*inch, 1.2*inch, 1.5*inch])
+        sleep_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ebf5fb')),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#aed6f1'))
+        ]))
+        
+        story.append(sleep_table)
+        story.append(Spacer(1, 15))
+        
+        # Valutazione sonno
+        sleep_eval = get_overall_sleep_evaluation(metrics['our_algo'])
+        story.append(Paragraph(f"<b>VALUTAZIONE QUALITÀ SONNO:</b> {sleep_eval}", normal_style))
+        story.append(Spacer(1, 10))
+    
+    # 5. RACCOMANDAZIONI E CONCLUSIONI
+    story.append(Paragraph("RIEPILOGO CLINICO E RACCOMANDAZIONI", heading_style))
+    
+    # Valutazione complessiva
+    overall_eval = get_overall_evaluation(metrics, user_profile)
+    story.append(Paragraph(f"<b>VALUTAZIONE CLINICA COMPLESSIVA:</b> {overall_eval}", normal_style))
+    story.append(Spacer(1, 10))
+    
+    # Raccomandazioni
+    recommendations = generate_recommendations(metrics, user_profile)
+    for rec in recommendations:
+        story.append(Paragraph(f"• {rec}", normal_style))
+    
+    story.append(Spacer(1, 10))
+    
+    # Informazioni tecniche
+    tech_info = f"<b>DURATA REGISTRAZIONE:</b> {selected_range} | <b>PERIODO ANALIZZATO:</b> {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}"
+    story.append(Paragraph(tech_info, normal_style))
+    
+    # Footer
+    story.append(Spacer(1, 20))
+    story.append(Paragraph(f"FINE REPORT CARDIOLOGICO - {datetime.now().strftime('%d/%m/%Y %H:%M')}", 
+                          ParagraphStyle('Footer', parent=normal_style, alignment=1, fontSize=8)))
+    
+    # Genera il PDF
+    doc.build(story)
+    buffer.seek(0)
+    
+    return buffer
+
+# Funzioni di supporto per le valutazioni
+def get_sdnn_evaluation(sdnn, gender):
+    if gender == "Donna":
+        if sdnn < 35: return "BASSO"
+        elif sdnn <= 65: return "NORMALE"
+        else: return "ALTO"
+    else:
+        if sdnn < 30: return "BASSO"
+        elif sdnn <= 60: return "NORMALE"
+        else: return "ALTO"
+
+def get_rmssd_evaluation(rmssd, gender):
+    if gender == "Donna":
+        if rmssd < 25: return "BASSO"
+        elif rmssd <= 45: return "BUONO"
+        else: return "ECCELLENTE"
+    else:
+        if rmssd < 20: return "BASSO"
+        elif rmssd <= 40: return "BUONO"
+        else: return "ECCELLENTE"
+
+def get_hr_evaluation(hr):
+    if hr < 60: return "OTTIMALE"
+    elif hr <= 80: return "NORMALE"
+    elif hr <= 100: return "ELEVATO"
+    else: return "TACHICARDIA"
+
+def get_coherence_evaluation(coherence):
+    if coherence < 30: return "BASSO"
+    elif coherence <= 60: return "MODERATO"
+    elif coherence <= 80: return "BUONO"
+    else: return "ECCELLENTE"
+
+def get_power_evaluation(power):
+    if power < 1000: return "BASSO"
+    elif power <= 3000: return "NORMALE"
+    else: return "ALTO"
+
+def get_lf_hf_evaluation(ratio):
+    if 0.5 <= ratio <= 2.0: return "NORMALE"
+    else: return "DA MONITORARE"
+
+def get_sleep_duration_evaluation(duration):
+    if duration >= 7: return "OTTIMALE"
+    elif duration >= 6: return "SUFFICIENTE"
+    else: return "INSUFFICIENTE"
+
+def get_sleep_efficiency_evaluation(efficiency):
+    if efficiency >= 85: return "ECCELLENTE"
+    elif efficiency >= 75: return "BUONO"
+    else: return "DA MIGLIORARE"
+
+def get_wakeups_evaluation(wakeups):
+    if wakeups <= 2: return "OTTIMO"
+    elif wakeups <= 5: return "BUONO"
+    else: return "ELEVATO"
+
+def get_overall_sleep_evaluation(sleep_metrics):
+    score = 0
+    if sleep_metrics.get('sleep_duration', 0) >= 7: score += 1
+    if sleep_metrics.get('sleep_efficiency', 0) >= 85: score += 1
+    if sleep_metrics.get('sleep_coherence', 0) >= 60: score += 1
+    if sleep_metrics.get('sleep_wakeups', 10) <= 3: score += 1
+    
+    if score >= 3: return "OTTIMA"
+    elif score >= 2: return "BUONA"
+    else: return "DA MIGLIORARE"
+
+def get_overall_evaluation(metrics, user_profile):
+    sdnn = metrics['our_algo']['sdnn']
+    rmssd = metrics['our_algo']['rmssd']
+    coherence = metrics['our_algo']['coherence']
+    
+    positive_count = 0
+    if get_sdnn_evaluation(sdnn, user_profile.get('gender', 'Uomo')) in ["NORMALE", "ALTO"]:
+        positive_count += 1
+    if get_rmssd_evaluation(rmssd, user_profile.get('gender', 'Uomo')) in ["BUONO", "ECCELLENTE"]:
+        positive_count += 1
+    if get_coherence_evaluation(coherence) in ["BUONO", "ECCELLENTE"]:
+        positive_count += 1
+    
+    if positive_count >= 3: return "ECCELLENTE"
+    elif positive_count >= 2: return "BUONO"
+    else: return "NEL LIMITE DELLA NORMA"
+
+def generate_recommendations(metrics, user_profile):
+    recommendations = []
+    
+    sdnn = metrics['our_algo']['sdnn']
+    rmssd = metrics['our_algo']['rmssd']
+    coherence = metrics['our_algo']['coherence']
+    
+    # Raccomandazioni basate su SDNN
+    if get_sdnn_evaluation(sdnn, user_profile.get('gender', 'Uomo')) == "BASSO":
+        recommendations.append("Pratica regolare attività fisica moderata per migliorare la variabilità cardiaca")
+        recommendations.append("Tecniche di respirazione profonda: 5 minuti, 3 volte al giorno")
+    
+    # Raccomandazioni basate su RMSSD
+    if get_rmssd_evaluation(rmssd, user_profile.get('gender', 'Uomo')) == "BASSO":
+        recommendations.append("Migliora la qualità del sonno e riduci lo stress per aumentare l'attività parasimpatica")
+        recommendations.append("Considera tecniche di rilassamento come meditazione o yoga")
+    
+    # Raccomandazioni basate su coerenza
+    if get_coherence_evaluation(coherence) in ["BASSO", "MODERATO"]:
+        recommendations.append("Allena la coerenza cardiaca con respirazione ritmica: 5 secondi inspiro, 5 secondi espiro")
+        recommendations.append("Sessioni di coerenza cardiaca: 10-15 minuti al giorno")
+    
+    # Raccomandazioni generali
+    recommendations.append("Mantieni uno stile di vita regolare con orari consistenti per sonno e pasti")
+    recommendations.append("Monitoraggio continuo consigliato per seguire l'evoluzione nel tempo")
+    
+    return recommendations[:4]  # Massimo 4 raccomandazioni
 
 # =============================================================================
 # PROFILO UTENTE MIGLIORATO
@@ -775,7 +1107,7 @@ def create_comprehensive_evaluation(metrics, gender, age):
             st.write(rec)
     
     # CONCLUSIONE FINALE
-    st.subheader("🎯 Conclusioni Finali")
+    st.subheader("🎯 Conclusioni Finales")
     
     positive_count = sum(1 for eval in [sdnn_eval, rmssd_eval, coherence_eval, hr_eval] if "🟢" in eval or "🔵" in eval)
     
@@ -857,7 +1189,33 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, se
     # 6. ANALISI SONNO (SOLO SE C'È)
     create_sleep_analysis(metrics)
     
-    # 7. SALVA NELLO STORICO
+    # 7. BOTTONE ESPORTA PDF
+    st.markdown("---")
+    st.header("📄 Esporta Report Completo")
+    
+    if st.button("🖨️ Genera Report PDF Professionale", type="primary", use_container_width=True):
+        with st.spinner("📊 Generando report PDF..."):
+            pdf_buffer = create_professional_pdf(
+                metrics, 
+                start_datetime, 
+                end_datetime, 
+                selected_range,
+                st.session_state.user_profile,
+                st.session_state.activities
+            )
+            
+            # Crea download button
+            st.success("✅ Report PDF generato con successo!")
+            
+            st.download_button(
+                label="📥 Scarica Report PDF",
+                data=pdf_buffer,
+                file_name=f"report_hrv_{start_datetime.strftime('%Y%m%d_%H%M')}_{st.session_state.user_profile['name']}_{st.session_state.user_profile['surname']}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+    
+    # 8. SALVA NELLO STORICO
     analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
     save_to_history(metrics, start_datetime, end_datetime, analysis_type, selected_range)
 
@@ -927,6 +1285,8 @@ with st.sidebar:
     # Mostra informazioni chiare sulla data rilevata
     if uploaded_file is not None:
         st.info(f"**Data/Ora inizio rilevazione:** {start_datetime.strftime('%d/%m/%Y %H:%M')}")
+        if st.session_state.recording_end_datetime:
+            st.info(f"**Data/Ora fine rilevazione:** {st.session_state.recording_end_datetime.strftime('%d/%m/%Y %H:%M')}")
     
     # Usa date_input e time_input separatamente
     col_date1, col_time1 = st.columns(2)
@@ -1147,6 +1507,7 @@ else:
         4. **🎯 Seleziona intervallo** con date specifiche
         5. **🚀 Avvia analisi** completa
         6. **📊 Consulta storico** analisi
+        7. **📄 Esporta report PDF** professionale
         """)
     
     with col2:
@@ -1159,6 +1520,8 @@ else:
         - 🌙 **Analisi sonno automatica**
         - ⚖️ **Interpretazioni per sesso**
         - 💡 **Raccomandazioni personalizzate**
+        - 📄 **Esportazione PDF** professionale
+        - 📅 **Data/ora fine rilevazione** calcolata automaticamente
         """)
 
 # FOOTER
