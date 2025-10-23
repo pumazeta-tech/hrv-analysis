@@ -199,7 +199,7 @@ def calculate_triple_metrics(total_hours, day_offset, actual_date, is_sleep_peri
 # FUNZIONI AGGIUNTE PER COMPLETARE TUTTO - ORIGINALI
 # =============================================================================
 
-def generate_timeline_data(actual_datetime, total_hours):
+def generate_timeline_data(total_hours, actual_datetime):
     """Genera dati per il grafico temporale con attività"""
     np.random.seed(42)
     
@@ -284,17 +284,14 @@ def create_timeline_plot(hours, sdnn_data, rmssd_data, hr_data, total_hours, act
     
     # Formatta l'asse X con orari
     if total_hours <= 6:
-        # Per registrazioni brevi: mostra ogni 30 minuti
         tick_interval = "30min"
-        dtick = 30 * 60 * 1000  # 30 minuti in millisecondi
+        dtick = 30 * 60 * 1000
     elif total_hours <= 12:
-        # Per mezze giornate: mostra ogni ora
         tick_interval = "60min" 
-        dtick = 60 * 60 * 1000  # 1 ora in millisecondi
+        dtick = 60 * 60 * 1000
     else:
-        # Per giornate intere: mostra ogni 2 ore
         tick_interval = "120min"
-        dtick = 120 * 60 * 1000  # 2 ore in millisecondi
+        dtick = 120 * 60 * 1000
     
     fig.update_layout(
         title=f'📈 Variabilità Cardiaca - {actual_datetime.strftime("%d/%m/%Y")}',
@@ -308,8 +305,8 @@ def create_timeline_plot(hours, sdnn_data, rmssd_data, hr_data, total_hours, act
         ),
         xaxis=dict(
             type='date',
-            tickformat='%H:%M',  # Mostra solo ore:minuti
-            dtick=dtick,  # Intervallo entre i tick
+            tickformat='%H:%M',
+            dtick=dtick,
             tickangle=45
         ),
         template='plotly_white',
@@ -331,7 +328,6 @@ def create_sleep_analysis(metrics):
     
     st.header("😴 Analisi Qualità del Sonno")
     
-    # Estrai dati sonno con valori di default
     sleep_data = metrics['our_algo']
     duration = sleep_data.get('sleep_duration', 0)
     efficiency = sleep_data.get('sleep_efficiency', 0)
@@ -344,7 +340,6 @@ def create_sleep_analysis(metrics):
     col1, col2 = st.columns(2)
     
     with col1:
-        # Metriche sonno principali
         st.subheader("📊 Metriche Sonno")
         
         sleep_metrics = [
@@ -357,7 +352,6 @@ def create_sleep_analysis(metrics):
             ('Risvegli', wakeups, '', '#1abc9c')
         ]
         
-        # Crea grafico a barre orizzontali
         names = [f"{metric[0]}" for metric in sleep_metrics]
         values = [metric[1] for metric in sleep_metrics]
         colors = [metric[3] for metric in sleep_metrics]
@@ -378,35 +372,21 @@ def create_sleep_analysis(metrics):
         st.plotly_chart(fig_sleep, use_container_width=True)
     
     with col2:
-        # Valutazione sonno
         st.subheader("🎯 Valutazione Qualità Sonno")
         
-        if duration > 0:  # Se abbiamo dati sonno
+        if duration > 0:
             if efficiency > 90 and duration >= 7 and wakeups <= 2:
                 valutazione = "🎯 OTTIMA qualità del sonno"
                 colore = "#2ecc71"
-                dettagli = """
-                • Durata ottimale (7-9 ore)
-                • Efficienza eccellente (>90%)
-                • Risvegli contenuti
-                • Buon recupero fisiologico
-                """
+                dettagli = "• Durata ottimale (7-9 ore)<br>• Efficienza eccellente (>90%)<br>• Risvegli contenuti"
             elif efficiency > 80 and duration >= 6:
                 valutazione = "👍 BUONA qualità del sonno" 
                 colore = "#f39c12"
-                dettagli = """
-                • Durata sufficiente
-                • Efficienza nella norma
-                • Qualità complessiva buona
-                """
+                dettagli = "• Durata sufficiente<br>• Efficienza nella norma<br>• Qualità complessiva buona"
             else:
                 valutazione = "⚠️ QUALITÀ da migliorare"
                 colore = "#e74c3c"
-                dettagli = """
-                • Durata insufficiente
-                • Efficienza da migliorare
-                • Troppi risvegli
-                """
+                dettagli = "• Durata insufficiente<br>• Efficienza da migliorare<br>• Troppi risvegli"
             
             st.markdown(f"""
             <div style='padding: 20px; background-color: {colore}20; border-radius: 10px; border-left: 4px solid {colore};'>
@@ -417,7 +397,6 @@ def create_sleep_analysis(metrics):
             </div>
             """, unsafe_allow_html=True)
             
-            # Mini grafico a torta per composizione sonno
             if duration > 0:
                 fig_pie = go.Figure(go.Pie(
                     labels=['Sonno Leggero', 'Sonno REM', 'Sonno Profondo'],
@@ -444,14 +423,12 @@ def create_frequency_analysis(metrics):
     col1, col2 = st.columns(2)
     
     with col1:
-        # Power Spectrum Components
         components = ['VLF', 'LF', 'HF']
         values_our = [metrics['our_algo']['vlf'], metrics['our_algo']['lf'], metrics['our_algo']['hf']]
         values_emwave = [metrics['emwave_style']['vlf'], metrics['emwave_style']['lf'], metrics['emwave_style']['hf']]
         values_kubios = [metrics['kubios_style']['vlf'], metrics['kubios_style']['lf'], metrics['kubios_style']['hf']]
         
         fig_power = go.Figure()
-        
         fig_power.add_trace(go.Bar(name='Nostro', x=components, y=values_our, marker_color='#3498db'))
         fig_power.add_trace(go.Bar(name='EmWave', x=components, y=values_emwave, marker_color='#2ecc71')) 
         fig_power.add_trace(go.Bar(name='Kubios', x=components, y=values_kubios, marker_color='#e74c3c'))
@@ -465,7 +442,6 @@ def create_frequency_analysis(metrics):
         st.plotly_chart(fig_power, use_container_width=True)
     
     with col2:
-        # Total Power Comparison
         total_powers = [
             metrics['our_algo']['total_power'],
             metrics['emwave_style']['total_power'], 
@@ -485,7 +461,6 @@ def create_frequency_analysis(metrics):
         
         st.plotly_chart(fig_total, use_container_width=True)
     
-    # Tabella dettagliata frequenze
     st.subheader("📊 Dettaglio Valori Frequenziali")
     
     freq_data = {
@@ -517,7 +492,7 @@ def create_frequency_analysis(metrics):
     st.dataframe(df_freq, use_container_width=True)
 
 def create_complete_analysis_dashboard(metrics):
-    """Crea un dashboard COMPLETO con TUTTE le funzioni originali - VERSIONE CORRETTA"""
+    """Crea un dashboard COMPLETO con TUTTE le funzioni originali"""
     
     # 1. METRICHE PRINCIPALI - TAB COMPARATIVA
     st.header("📊 Analisi Comparativa Completa")
@@ -548,29 +523,10 @@ def create_complete_analysis_dashboard(metrics):
     algorithms = ['Nostro', 'EmWave', 'Kubios']
     
     fig_comparison = go.Figure()
+    fig_comparison.add_trace(go.Bar(name='SDNN', x=algorithms, y=[metrics['our_algo']['sdnn'], metrics['emwave_style']['sdnn'], metrics['kubios_style']['sdnn']], marker_color='#e74c3c'))
+    fig_comparison.add_trace(go.Bar(name='RMSSD', x=algorithms, y=[metrics['our_algo']['rmssd'], metrics['emwave_style']['rmssd'], metrics['kubios_style']['rmssd']], marker_color='#3498db'))
     
-    # SDNN
-    fig_comparison.add_trace(go.Bar(
-        name='SDNN',
-        x=algorithms,
-        y=[metrics['our_algo']['sdnn'], metrics['emwave_style']['sdnn'], metrics['kubios_style']['sdnn']],
-        marker_color='#e74c3c'
-    ))
-    
-    # RMSSD
-    fig_comparison.add_trace(go.Bar(
-        name='RMSSD', 
-        x=algorithms,
-        y=[metrics['our_algo']['rmssd'], metrics['emwave_style']['rmssd'], metrics['kubios_style']['rmssd']],
-        marker_color='#3498db'
-    ))
-    
-    fig_comparison.update_layout(
-        title="Confronto SDNN e RMSSD tra Algoritmi",
-        barmode='group',
-        yaxis_title="Valori (ms)"
-    )
-    
+    fig_comparison.update_layout(title="Confronto SDNN e RMSSD tra Algoritmi", barmode='group')
     st.plotly_chart(fig_comparison, use_container_width=True)
     
     # 3. POWER SPECTRUM ANALYSIS
@@ -579,25 +535,15 @@ def create_complete_analysis_dashboard(metrics):
     col1, col2 = st.columns(2)
     
     with col1:
-        # Componenti VLF, LF, HF
         components = ['VLF', 'LF', 'HF']
         values = [metrics['our_algo']['vlf'], metrics['our_algo']['lf'], metrics['our_algo']['hf']]
-        
-        fig_power = go.Figure(go.Bar(
-            x=components, y=values,
-            marker_color=['#3498db', '#e74c3c', '#2ecc71']
-        ))
+        fig_power = go.Figure(go.Bar(x=components, y=values, marker_color=['#3498db', '#e74c3c', '#2ecc71']))
         fig_power.update_layout(title="Componenti Power Spectrum")
         st.plotly_chart(fig_power, use_container_width=True)
     
     with col2:
-        # LF/HF Ratio
         lf_hf_values = [metrics['our_algo']['lf_hf_ratio'], metrics['emwave_style']['lf_hf_ratio'], metrics['kubios_style']['lf_hf_ratio']]
-        
-        fig_ratio = go.Figure(go.Bar(
-            x=algorithms, y=lf_hf_values,
-            marker_color=['#3498db', '#2ecc71', '#e74c3c']
-        ))
+        fig_ratio = go.Figure(go.Bar(x=algorithms, y=lf_hf_values, marker_color=['#3498db', '#2ecc71', '#e74c3c']))
         fig_ratio.update_layout(title="Rapporto LF/HF")
         fig_ratio.add_hline(y=1.5, line_dash="dash", line_color="red", annotation_text="Ideale")
         st.plotly_chart(fig_ratio, use_container_width=True)
@@ -605,7 +551,6 @@ def create_complete_analysis_dashboard(metrics):
     # 4. POINCARÉ PLOT AVANZATO
     st.subheader("🔄 Poincaré Plot - Analisi Non Lineare")
     
-    # Simula dati Poincaré realistici
     np.random.seed(42)
     n_points = 300
     mean_rr = 60000 / metrics['our_algo']['hr_mean']
@@ -620,43 +565,22 @@ def create_complete_analysis_dashboard(metrics):
     rr_n = rr_intervals[:-1]
     rr_n1 = rr_intervals[1:]
     
-    # Converti in array numpy
     rr_n_array = np.array(rr_n)
     rr_n1_array = np.array(rr_n1)
     rr_intervals_array = np.array(rr_intervals)
     
-    # Calcola SD1 e SD2
     differences = rr_n_array - rr_n1_array
     sd1 = np.sqrt(0.5 * np.var(differences))
     sd2 = np.sqrt(2 * np.var(rr_intervals_array) - 0.5 * np.var(differences))
     
     fig_poincare = go.Figure()
+    fig_poincare.add_trace(go.Scatter(x=rr_n_array, y=rr_n1_array, mode='markers', marker=dict(size=6, color='#3498db', opacity=0.6), name='Battiti RR'))
     
-    # Punti scatter
-    fig_poincare.add_trace(go.Scatter(
-        x=rr_n_array, y=rr_n1_array, 
-        mode='markers',
-        marker=dict(size=6, color='#3498db', opacity=0.6),
-        name='Battiti RR'
-    ))
-    
-    # Linea identità
     max_val = max(np.max(rr_n_array), np.max(rr_n1_array))
     min_val = min(np.min(rr_n_array), np.min(rr_n1_array))
-    fig_poincare.add_trace(go.Scatter(
-        x=[min_val, max_val], y=[min_val, max_val],
-        mode='lines',
-        line=dict(dash='dash', color='red'),
-        name='Linea Identità'
-    ))
+    fig_poincare.add_trace(go.Scatter(x=[min_val, max_val], y=[min_val, max_val], mode='lines', line=dict(dash='dash', color='red'), name='Linea Identità'))
     
-    fig_poincare.update_layout(
-        title=f'Poincaré Plot - SD1: {sd1:.1f}ms, SD2: {sd2:.1f}ms',
-        xaxis_title='RRn (ms)',
-        yaxis_title='RRn+1 (ms)',
-        template='plotly_white'
-    )
-    
+    fig_poincare.update_layout(title=f'Poincaré Plot - SD1: {sd1:.1f}ms, SD2: {sd2:.1f}ms')
     st.plotly_chart(fig_poincare, use_container_width=True)
     
     # 5. ANALISI FREQUENZIALE DETTAGLIATA
@@ -665,7 +589,6 @@ def create_complete_analysis_dashboard(metrics):
     # 6. VALUTAZIONE CLINICA
     st.subheader("🎯 Valutazione Clinica e Raccomandazioni")
     
-    # Valutazione SDNN
     sdnn_val = metrics['our_algo']['sdnn']
     if sdnn_val > 120:
         valutazione = "**ECCELLENTE** - Variabilità cardiaca da atleta"
@@ -685,7 +608,7 @@ def create_complete_analysis_dashboard(metrics):
         raccomandazioni = "Importante: consulta un medico e migliora stile di vita."
     
     st.markdown(f"""
-    <div style='padding: 20px; background-color: {colore}20; border-radius: 10px; border-left: 4px solid {colore}; margin: 10px 0;'>
+    <div style='padding: 20px; background-color: {colore}20; border-radius: 10px; border-left: 4px solid {colore};'>
         <h4>📋 Valutazione: {valutazione}</h4>
         <p><strong>SDNN:</strong> {sdnn_val:.1f} ms | <strong>Profilo Salute:</strong> {metrics['our_algo']['health_profile_factor']}</p>
         <p><strong>💡 Raccomandazioni:</strong> {raccomandazioni}</p>
@@ -696,8 +619,8 @@ def create_complete_analysis_dashboard(metrics):
     st.header("⏰ Analisi Temporale - SDNN, RMSSD e HR")
     
     hours, sdnn_data, rmssd_data, hr_data = generate_timeline_data(
-        metrics['our_algo']['actual_date'], 
-        metrics['our_algo']['recording_hours']
+        metrics['our_algo']['recording_hours'],
+        metrics['our_algo']['actual_date']
     )
     
     timeline_fig = create_timeline_plot(
@@ -726,7 +649,7 @@ def create_complete_analysis_dashboard(metrics):
         """)
     
     with col2:
-        st.subheader("🎯 Raccomandazioni Finales")
+        st.subheader("🎯 Raccomandazioni Finali")
         st.markdown("""
         - Continuare con attività fisica regolare
         - Praticare tecniche di respirazione
@@ -775,7 +698,7 @@ with st.sidebar:
     
     analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary")
 
-# Main Content - NESSUNA VARIABILE GLOBALE metrics QUI!
+# Main Content
 if analyze_btn:
     with st.spinner("🎯 **ANALISI COMPLETA IN CORSO**..."):
         if uploaded_file is not None:
