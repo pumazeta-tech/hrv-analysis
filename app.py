@@ -56,26 +56,6 @@ def extract_datetime_from_content(content):
         except ValueError:
             pass
     
-    # Pattern alternativo
-    patterns = [
-        r'(\d{1,2})[\./-](\d{1,2})[\./-](\d{4})[\sT](\d{1,2}):(\d{2}):(\d{2})',
-        r'(\d{4})[\./-](\d{1,2})[\./-](\d{1,2})[\sT](\d{1,2}):(\d{2}):(\d{2})',
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, content)
-        if match:
-            groups = match.groups()
-            if len(groups[0]) == 4:  # YYYY-MM-DD
-                year, month, day, hour, minute, second = map(int, groups[:6])
-            else:  # DD-MM-YYYY
-                day, month, year, hour, minute, second = map(int, groups[:6])
-            
-            try:
-                return datetime(year, month, day, hour, minute, second)
-            except ValueError:
-                continue
-    
     return None
 
 def estimate_recording_duration(rr_intervals):
@@ -204,7 +184,682 @@ def create_user_profile():
         if profile['birth_date']:
             st.sidebar.info(f"**Età:** {profile['age']} anni | **Sesso:** {profile['gender']}")
 
-# ... (mantieni tutte le altre funzioni come prima: interpret_metrics_for_gender, read_ibi_file_fast, calculate_hrv_metrics_from_rr, create_activity_diary, show_analysis_history, calculate_triple_metrics, create_hrv_timeseries_plot, create_power_spectrum_plot, create_sleep_analysis, create_interpretation_panel, create_comprehensive_evaluation, create_complete_analysis_dashboard) ...
+def interpret_metrics_for_gender(metrics, gender, age):
+    """Aggiusta e interpreta le metriche in base a sesso ed età"""
+    adjusted_metrics = metrics.copy()
+    
+    # Fattori di aggiustamento per sesso
+    if gender == "Donna":
+        sdnn_factor = 1.1
+        rmssd_factor = 1.15
+        coherence_factor = 1.05
+    else:
+        sdnn_factor = 1.0
+        rmssd_factor = 1.0
+        coherence_factor = 1.0
+    
+    # Aggiustamento per età
+    age_factor = max(0.7, 1.0 - (age - 25) * 0.005)
+    
+    # Applica aggiustamenti
+    adjusted_metrics['our_algo']['sdnn'] *= sdnn_factor * age_factor
+    adjusted_metrics['our_algo']['rmssd'] *= rmssd_factor * age_factor
+    adjusted_metrics['our_algo']['coherence'] *= coherence_factor
+    
+    return adjusted_metrics
+
+# =============================================================================
+# FUNZIONI PER CARICAMENTO FILE IBI
+# =============================================================================
+
+def read_ibi_file_fast(uploaded_file):
+    """Legge file IBI - VERSIONE VELOCE e PULITA"""
+    try:
+        uploaded_file.seek(0)
+        content = uploaded_file.getvalue().decode('utf-8')
+        lines = content.splitlines()
+        
+        rr_intervals = []
+        found_points = False
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            if '[POINTS]' in line:
+                found_points = True
+                continue
+            
+            if found_points and not line.startswith('['):
+                try:
+                    val = float(line.replace(',', '.'))
+                    if 200 <= val <= 2000:
+                        rr_intervals.append(val)
+                    elif 0.2 <= val <= 2.0:
+                        rr_intervals.append(val * 1000)
+                except ValueError:
+                    continue
+        
+        return np.array(rr_intervals, dtype=float)
+        
+    except Exception as e:
+        st.error(f"❌ Errore nella lettura del file: {e}")
+        return np.array([])
+
+def calculate_hrv_metrics_from_rr(rr_intervals):
+    """Calcola metriche HRV da RR intervals"""
+    if len(rr_intervals) == 0:
+        return None
+    
+    rr_intervals = np.array(rr_intervals, dtype=float)
+    
+    if np.mean(rr_intervals) < 100:
+        rr_intervals = rr_intervals * 1000
+    
+    mean_rr = np.mean(rr_intervals)
+    sdnn = np.std(rr_intervals)
+    differences = np.diff(rr_intervals)
+    rmssd = np.sqrt(np.mean(differences ** 2))
+    hr_mean = 60000 / mean_rr if mean_rr > 0 else 0
+    
+    return {
+        'mean_rr': mean_rr,
+        'sdnn': sdnn,
+        'rmssd': rmssd, 
+        'hr_mean': hr_mean,
+        'n_intervals': len(rr_intervals),
+        'total_duration': np.sum(rr_intervals) / 60000
+    }
+
+# =============================================================================
+# DIARIO ATTIVITÀ MIGLIORATO CON DATA
+# =============================================================================
+
+def create_activity_diary():
+    """Crea un diario delle attività con data e ora specifiche"""
+    st.sidebar.header("📝 Diario Attività")
+    
+    with st.sidebar.expander("➕ Aggiungi Attività", expanded=False):
+        activity_name = st.text_input("Nome attività*", placeholder="Es: Cena, Palestra, Sonno...", key="diary_activity_name")
+        
+        st.write("**Data e orario attività:**")
+        col1, col2 = st.columns(2)
+        with col1:
+            activity_date = st.date_input(
+                "Data attività",
+                value=datetime.now().date(),
+                key="diary_activity_date"
+            )
+        with col2:
+            col_time1, col_time2 = st.columns(2)
+            with col_time1:
+                start_time = st.time_input("Dalle ore", datetime.now().time(), key="diary_start_time")
+            with col_time2:
+                end_time = st.time_input("Alle ore", (datetime.now() + timedelta(hours=1)).time(), key="diary_end_time")
+        
+        activity_color = st.color_picker("Colore attività", "#3498db", key="diary_activity_color")
+        
+        col3, col4 = st.columns(2)
+        with col3:
+            if st.button("💾 Salva Attività", use_container_width=True, key="save_activity_btn"):
+                if activity_name.strip():
+                    activity_start = datetime.combine(activity_date, start_time)
+                    activity_end = datetime.combine(activity_date, end_time)
+                    
+                    if activity_end <= activity_start:
+                        st.error("❌ L'orario di fine deve essere successivo all'orario di inizio")
+                    else:
+                        activity = {
+                            'name': activity_name.strip(),
+                            'start': activity_start,
+                            'end': activity_end,
+                            'color': activity_color
+                        }
+                        st.session_state.activities.append(activity)
+                        st.success("✅ Attività salvata!")
+                        st.rerun()
+                else:
+                    st.error("❌ Inserisci un nome per l'attività")
+        
+        with col4:
+            if st.button("🗑️ Cancella Tutto", use_container_width=True, key="clear_activities_btn"):
+                st.session_state.activities = []
+                st.success("✅ Tutte le attività cancellate!")
+                st.rerun()
+    
+    if st.session_state.activities:
+        st.sidebar.subheader("📋 Attività Salvate")
+        # Ordina attività per data/ora
+        sorted_activities = sorted(st.session_state.activities, key=lambda x: x['start'])
+        
+        for i, activity in enumerate(sorted_activities):
+            with st.sidebar.expander(f"📅 {activity['start'].strftime('%d/%m %H:%M')}-{activity['end'].strftime('%H:%M')} {activity['name']}", False):
+                st.write(f"**Data:** {activity['start'].strftime('%d/%m/%Y')}")
+                st.write(f"**Orario:** {activity['start'].strftime('%H:%M')} - {activity['end'].strftime('%H:%M')}")
+                st.write(f"**Colore:** {activity['color']}")
+                
+                if st.button(f"❌ Elimina", key=f"delete_activity_{i}"):
+                    st.session_state.activities.pop(i)
+                    st.rerun()
+
+# =============================================================================
+# STORICO ANALISI CORRETTO
+# =============================================================================
+
+def save_to_history(metrics, start_datetime, end_datetime, analysis_type, selected_range):
+    """Salva l'analisi corrente nello storico"""
+    analysis_data = {
+        'timestamp': datetime.now(),
+        'start_datetime': start_datetime,
+        'end_datetime': end_datetime,
+        'analysis_type': analysis_type,
+        'selected_range': selected_range,
+        'user_profile': st.session_state.user_profile.copy(),
+        'metrics': {
+            'sdnn': metrics['our_algo']['sdnn'],
+            'rmssd': metrics['our_algo']['rmssd'],
+            'hr_mean': metrics['our_algo']['hr_mean'],
+            'coherence': metrics['our_algo']['coherence'],
+            'recording_hours': metrics['our_algo']['recording_hours']
+        }
+    }
+    st.session_state.analysis_history.append(analysis_data)
+
+def show_analysis_history():
+    """Mostra lo storico delle analisi"""
+    if st.session_state.analysis_history:
+        st.sidebar.header("📊 Storico Analisi")
+        
+        history_data = []
+        for i, analysis in enumerate(reversed(st.session_state.analysis_history[-5:])):
+            user_profile = analysis.get('user_profile', {})
+            metrics = analysis.get('metrics', {})
+            
+            user_name = f"{user_profile.get('name', 'N/A')} {user_profile.get('surname', '')}".strip()
+            if not user_name:
+                user_name = "N/A"
+                
+            history_data.append({
+                'Data': analysis['start_datetime'].strftime('%d/%m %H:%M'),
+                'Utente': user_name,
+                'SDNN': f"{metrics.get('sdnn', 0):.1f}",
+                'RMSSD': f"{metrics.get('rmssd', 0):.1f}",
+            })
+        
+        if history_data:
+            df_history = pd.DataFrame(history_data)
+            st.sidebar.dataframe(df_history, use_container_width=True, hide_index=True)
+
+# =============================================================================
+# FUNZIONI DI ANALISI HRV MIGLIORATE - GRAFICI CON ORE REALI
+# =============================================================================
+
+def calculate_triple_metrics(total_hours, actual_date, is_sleep_period=False, health_profile_factor=0.5):
+    """Calcola metriche HRV complete"""
+    np.random.seed(123 + int(actual_date.timestamp()))
+    
+    # Metriche sonno SOLO SE è periodo notturno
+    sleep_metrics = {
+        'sleep_duration': None, 'sleep_efficiency': None, 'sleep_coherence': None,
+        'sleep_hr': None, 'sleep_rem': None, 'sleep_deep': None, 'sleep_wakeups': None,
+    }
+    
+    if is_sleep_period and total_hours >= 4:
+        sleep_duration = min(8.0, total_hours * 0.9)
+        sleep_metrics = {
+            'sleep_duration': sleep_duration,
+            'sleep_efficiency': min(95, 85 + np.random.normal(0, 5)),
+            'sleep_coherence': 65 + np.random.normal(0, 3),
+            'sleep_hr': 58 + np.random.normal(0, 2),
+            'sleep_rem': min(2.0, sleep_duration * 0.25),
+            'sleep_deep': min(1.5, sleep_duration * 0.2),
+            'sleep_wakeups': max(0, int(sleep_duration * 0.5)),
+        }
+
+    # Metriche base
+    base_metrics = {
+        'sdnn': 50 + (250 * health_profile_factor) + np.random.normal(0, 20),
+        'rmssd': 30 + (380 * health_profile_factor) + np.random.normal(0, 25),
+        'hr_mean': 65 - (10 * health_profile_factor) + np.random.normal(0, 2),
+        'total_power': 5000 + (90000 * health_profile_factor) + np.random.normal(0, 10000),
+    }
+    
+    our_metrics = {
+        'sdnn': max(20, base_metrics['sdnn']),
+        'rmssd': max(15, base_metrics['rmssd']),
+        'hr_mean': base_metrics['hr_mean'],
+        'hr_min': max(40, base_metrics['hr_mean'] - 15),
+        'hr_max': min(180, base_metrics['hr_mean'] + 30),
+        'actual_date': actual_date,
+        'recording_hours': total_hours,
+        'is_sleep_period': is_sleep_period,
+        'health_profile_factor': health_profile_factor,
+        'total_power': max(1000, base_metrics['total_power']),
+        'vlf': max(500, 2000 + (6000 * health_profile_factor)),
+        'lf': max(200, 5000 + (50000 * health_profile_factor)),
+        'hf': max(300, 3000 + (30000 * health_profile_factor)),
+        'lf_hf_ratio': max(0.3, 1.0 + (1.5 * health_profile_factor)),
+        'coherence': max(20, 40 + (40 * health_profile_factor)),
+    }
+    
+    our_metrics.update(sleep_metrics)
+    
+    return {
+        'our_algo': our_metrics,
+        'emwave_style': {
+            'sdnn': our_metrics['sdnn'] * 0.7,
+            'rmssd': our_metrics['rmssd'] * 0.7,
+            'hr_mean': our_metrics['hr_mean'] + 2,
+            'coherence': 50
+        },
+        'kubios_style': {
+            'sdnn': our_metrics['sdnn'] * 1.3,
+            'rmssd': our_metrics['rmssd'] * 1.3,
+            'hr_mean': our_metrics['hr_mean'] - 2,
+            'coherence': 70
+        }
+    }
+
+def create_hrv_timeseries_plot(metrics, activities, start_datetime, end_datetime):
+    """Crea il grafico temporale di SDNN, RMSSD, HR con ore reali"""
+    duration_hours = metrics['our_algo']['recording_hours']
+    
+    # Crea timeline con ore reali
+    time_points = [start_datetime + timedelta(hours=x) for x in np.linspace(0, duration_hours, 100)]
+    
+    # Crea variazioni realistiche
+    base_sdnn = metrics['our_algo']['sdnn']
+    base_rmssd = metrics['our_algo']['rmssd'] 
+    base_hr = metrics['our_algo']['hr_mean']
+    
+    sdnn_values = base_sdnn + np.sin(np.linspace(0, 6, 100)) * 10 + np.random.normal(0, 5, 100)
+    rmssd_values = base_rmssd + np.sin(np.linspace(0, 4, 100)) * 8 + np.random.normal(0, 3, 100)
+    hr_values = base_hr + np.sin(np.linspace(0, 8, 100)) * 8 + np.random.normal(0, 2, 100)
+    
+    fig = go.Figure()
+    
+    # Aggiungi tracce HRV
+    fig.add_trace(go.Scatter(x=time_points, y=sdnn_values, mode='lines', name='SDNN', line=dict(color='#3498db', width=2)))
+    fig.add_trace(go.Scatter(x=time_points, y=rmssd_values, mode='lines', name='RMSSD', line=dict(color='#e74c3c', width=2)))
+    fig.add_trace(go.Scatter(x=time_points, y=hr_values, mode='lines', name='HR', line=dict(color='#2ecc71', width=2), yaxis='y2'))
+    
+    # Aggiungi attività come aree verticali
+    for activity in activities:
+        # Mostra solo attività che rientrano nel periodo analizzato
+        if (activity['start'] >= start_datetime and activity['start'] <= end_datetime) or \
+           (activity['end'] >= start_datetime and activity['end'] <= end_datetime):
+            
+            fig.add_vrect(
+                x0=activity['start'], x1=activity['end'],
+                fillcolor=activity['color'], opacity=0.3,
+                layer="below", line_width=1, line_color=activity['color'],
+                annotation_text=activity['name'],
+                annotation_position="top left"
+            )
+    
+    fig.update_layout(
+        title="📈 Andamento Temporale HRV con Attività",
+        xaxis_title="Data e Ora",
+        yaxis_title="HRV (ms)",
+        yaxis2=dict(
+            title="HR (bpm)",
+            overlaying='y',
+            side='right'
+        ),
+        height=500,
+        showlegend=True,
+        xaxis=dict(
+            tickformat='%d/%m %H:%M'
+        )
+    )
+    
+    return fig
+
+def create_power_spectrum_plot(metrics):
+    """Crea il grafico dello spettro di potenza"""
+    bands = ['VLF', 'LF', 'HF']
+    power_values = [
+        metrics['our_algo']['vlf'],
+        metrics['our_algo']['lf'], 
+        metrics['our_algo']['hf']
+    ]
+    colors = ['#95a5a6', '#3498db', '#e74c3c']
+    
+    fig = go.Figure(go.Bar(
+        x=bands, y=power_values,
+        marker_color=colors,
+        text=[f'{val:.0f}' for val in power_values],
+        textposition='auto'
+    ))
+    
+    fig.update_layout(
+        title="📊 Spettro di Potenza HRV",
+        xaxis_title="Bande Frequenza",
+        yaxis_title="Potenza (ms²)",
+        height=300
+    )
+    
+    return fig
+
+def create_sleep_analysis(metrics):
+    """Crea l'analisi completa del sonno SOLO SE c'è periodo notturno"""
+    sleep_data = metrics['our_algo']
+    duration = sleep_data.get('sleep_duration', 0)
+    
+    if duration is not None and duration > 0:
+        st.header("😴 Analisi Qualità del Sonno")
+        
+        efficiency = sleep_data.get('sleep_efficiency', 0)
+        coherence = sleep_data.get('sleep_coherence', 0)
+        hr_night = sleep_data.get('sleep_hr', 0)
+        rem = sleep_data.get('sleep_rem', 0)
+        deep = sleep_data.get('sleep_deep', 0)
+        wakeups = sleep_data.get('sleep_wakeups', 0)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📊 Metriche Sonno")
+            
+            sleep_metrics = [
+                ('Durata Sonno', duration, 'h', '#3498db'),
+                ('Efficienza', efficiency, '%', '#e74c3c'),
+                ('Coerenza Notturna', coherence, '%', '#f39c12'),
+                ('HR Medio Notte', hr_night, 'bpm', '#9b59b6'),
+                ('Sonno REM', rem, 'h', '#34495e'),
+                ('Sonno Profondo', deep, 'h', '#2ecc71'),
+                ('Risvegli', wakeups, '', '#1abc9c')
+            ]
+            
+            names = [f"{metric[0]}" for metric in sleep_metrics]
+            values = [metric[1] for metric in sleep_metrics]
+            
+            fig_sleep = go.Figure(go.Bar(
+                x=values, y=names,
+                orientation='h',
+                marker_color=[metric[3] for metric in sleep_metrics]
+            ))
+            
+            fig_sleep.update_layout(
+                title="Metriche Sonno Dettagliate",
+                xaxis_title="Valori",
+                height=400,
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig_sleep, use_container_width=True)
+        
+        with col2:
+            st.subheader("🎯 Valutazione Qualità Sonno")
+            
+            if efficiency > 90 and duration >= 7 and wakeups <= 2:
+                valutazione = "🎯 OTTIMA qualità del sonno"
+                colore = "#2ecc71"
+                consiglio = "Continua così! Il tuo sonno è ottimale."
+            elif efficiency > 80 and duration >= 6:
+                valutazione = "👍 BUONA qualità del sonno" 
+                colore = "#f39c12"
+                consiglio = "Buon sonno. Piccoli miglioramenti possibili nella continuità."
+            else:
+                valutazione = "⚠️ QUALITÀ da migliorare"
+                colore = "#e74c3c"
+                consiglio = "Considera routine serale più regolare e ambiente più silenzioso."
+            
+            st.markdown(f"""
+            <div style='padding: 20px; background-color: {colore}20; border-radius: 10px; border-left: 4px solid {colore};'>
+                <h4>{valutazione}</h4>
+                <p><strong>Durata:</strong> {duration:.1f}h | <strong>Efficienza:</strong> {efficiency:.0f}%</p>
+                <p><strong>Risvegli:</strong> {wakeups} | <strong>HR notte:</strong> {hr_night:.0f} bpm</p>
+                <p><strong>Consiglio:</strong> {consiglio}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if duration > 0:
+                light_sleep = duration - rem - deep
+                if light_sleep > 0:
+                    fig_pie = go.Figure(go.Pie(
+                        labels=['Sonno Leggero', 'Sonno REM', 'Sonno Profondo'],
+                        values=[light_sleep, rem, deep],
+                        marker_colors=['#3498db', '#e74c3c', '#2ecc71']
+                    ))
+                    fig_pie.update_layout(title="Composizione Sonno")
+                    st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        st.info("🌞 **Periodo diurno** - Analisi sonno disponibile solo per periodi notturni (22:00-06:00)")
+
+def create_interpretation_panel(metrics, gender, age):
+    """Crea pannello interpretazione con valori di riferimento per sesso"""
+    st.header("🎯 Interpretazione Risultati")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📈 Valori di Riferimento")
+        
+        if gender == "Donna":
+            st.markdown("""
+            **Per DONNE:**
+            - **SDNN:** 
+              - Basso: < 35 ms
+              - Normale: 35-65 ms  
+              - Alto: > 65 ms
+            - **RMSSD:**
+              - Basso: < 25 ms
+              - Normale: 25-45 ms
+              - Alto: > 45 ms
+            """)
+        else:
+            st.markdown("""
+            **Per UOMINI:**
+            - **SDNN:** 
+              - Basso: < 30 ms
+              - Normale: 30-60 ms  
+              - Alto: > 60 ms
+            - **RMSSD:**
+              - Basso: < 20 ms
+              - Normale: 20-40 ms
+              - Alto: > 40 ms
+            """)
+    
+    with col2:
+        st.subheader("📊 I Tuoi Valori")
+        
+        sdnn = metrics['our_algo']['sdnn']
+        rmssd = metrics['our_algo']['rmssd']
+        
+        # Valutazione SDNN
+        if gender == "Donna":
+            if sdnn < 35: sdnn_val = "🔴 Basso"
+            elif sdnn <= 65: sdnn_val = "🟢 Normale" 
+            else: sdnn_val = "🔵 Alto"
+        else:
+            if sdnn < 30: sdnn_val = "🔴 Basso"
+            elif sdnn <= 60: sdnn_val = "🟢 Normale"
+            else: sdnn_val = "🔵 Alto"
+            
+        # Valutazione RMSSD
+        if gender == "Donna":
+            if rmssd < 25: rmssd_val = "🔴 Basso"
+            elif rmssd <= 45: rmssd_val = "🟢 Normale"
+            else: rmssd_val = "🔵 Alto"
+        else:
+            if rmssd < 20: rmssd_val = "🔴 Basso"
+            elif rmssd <= 40: rmssd_val = "🟢 Normale"
+            else: rmssd_val = "🔵 Alto"
+        
+        st.metric("SDNN", f"{sdnn:.1f} ms", sdnn_val)
+        st.metric("RMSSD", f"{rmssd:.1f} ms", rmssd_val)
+
+def create_comprehensive_evaluation(metrics, gender, age):
+    """Crea valutazione completa con conclusioni"""
+    st.header("🧠 Valutazione Completa e Conclusioni")
+    
+    sdnn = metrics['our_algo']['sdnn']
+    rmssd = metrics['our_algo']['rmssd']
+    hr_mean = metrics['our_algo']['hr_mean']
+    coherence = metrics['our_algo']['coherence']
+    
+    # VALUTAZIONE SDNN
+    if gender == "Donna":
+        if sdnn < 35: sdnn_eval = "🔴 BASSA Variabilità Cardiaca"
+        elif sdnn <= 65: sdnn_eval = "🟢 Variabilità Cardiaca NORMALE"
+        else: sdnn_eval = "🔵 ALTA Variabilità Cardiaca"
+    else:
+        if sdnn < 30: sdnn_eval = "🔴 BASSA Variabilità Cardiaca"
+        elif sdnn <= 60: sdnn_eval = "🟢 Variabilità Cardiaca NORMALE"
+        else: sdnn_eval = "🔵 ALTA Variabilità Cardiaca"
+    
+    # VALUTAZIONE RMSSD (variabilità a breve termine)
+    if gender == "Donna":
+        if rmssd < 25: rmssd_eval = "🔴 BASSA Attività Parasimpatica"
+        elif rmssd <= 45: rmssd_eval = "🟢 Attività Parasimpatica NORMALE"
+        else: rmssd_eval = "🔵 ALTA Attività Parasimpatica"
+    else:
+        if rmssd < 20: rmssd_eval = "🔴 BASSA Attività Parasimpatica"
+        elif rmssd <= 40: rmssd_eval = "🟢 Attività Parasimpatica NORMALE"
+        else: rmssd_eval = "🔵 ALTA Attività Parasimpatica"
+    
+    # VALUTAZIONE COERENZA
+    if coherence < 30: coherence_eval = "🔴 BASSA Coerenza Psicofisiologica"
+    elif coherence <= 60: coherence_eval = "🟡 Coerenza Psicofisiologica MEDIA"
+    else: coherence_eval = "🟢 ALTA Coerenza Psicofisiologica"
+    
+    # VALUTAZIONE HR
+    if hr_mean < 60: hr_eval = "🔵 Bradicardia (HR basso)"
+    elif hr_mean <= 80: hr_eval = "🟢 Frequenza Cardiaca NORMALE"
+    elif hr_mean <= 100: hr_eval = "🟡 Tachicardia Lieve"
+    else: hr_eval = "🔴 Tachicardia"
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📋 Sintesi Valutazioni")
+        st.markdown(f"""
+        - **Variabilità Cardiaca (SDNN):** {sdnn_eval}
+        - **Attività Parasimpatica (RMSSD):** {rmssd_eval}
+        - **Coerenza Psicofisiologica:** {coherence_eval}
+        - **Frequenza Cardiaca:** {hr_eval}
+        """)
+    
+    with col2:
+        st.subheader("💡 Raccomandazioni")
+        
+        recommendations = []
+        
+        if "BASSA" in sdnn_eval:
+            recommendations.append("• **Migliora gestione stress**: pratica respirazione profonda")
+            recommendations.append("• **Aumenta attività fisica** moderata quotidiana")
+            recommendations.append("• **Mantieni ritmi sonno-veglia regolari**")
+        
+        if "BASSA" in rmssd_eval:
+            recommendations.append("• **Pratica tecniche di rilassamento**: meditazione, yoga")
+            recommendations.append("• **Riduci caffeina** e stimolanti")
+            recommendations.append("• **Migliora qualità sonno**")
+        
+        if "BASSA" in coherence_eval or "MEDIA" in coherence_eval:
+            recommendations.append("• **Allena coerenza cardiaca**: 5 minuti 3 volte al giorno")
+            recommendations.append("• **Respirazione ritmica**: 5 secondi inspiro, 5 secondi espiro")
+        
+        if "Tachicardia" in hr_eval:
+            recommendations.append("• **Riduci stress acuto**")
+            recommendations.append("• **Controlla idratazione** ed elettroliti")
+            recommendations.append("• **Consulta medico** se persistente")
+        
+        if not recommendations:
+            recommendations.append("• **Continua così!** Il tuo profilo è ottimale")
+            recommendations.append("• **Mantieni stile di vita sano**")
+            recommendations.append("• **Monitoraggio regolare** consigliato")
+        
+        for rec in recommendations:
+            st.write(rec)
+    
+    # CONCLUSIONE FINALE
+    st.subheader("🎯 Conclusioni Finali")
+    
+    positive_count = sum(1 for eval in [sdnn_eval, rmssd_eval, coherence_eval, hr_eval] if "🟢" in eval or "🔵" in eval)
+    
+    if positive_count >= 3:
+        conclusion = "**OTTIMO STATO DI SALUTE** - Il tuo profilo HRV indica un eccellente stato di benessere psicofisico."
+        color = "#2ecc71"
+    elif positive_count >= 2:
+        conclusion = "**BUONO STATO DI SALUTE** - Profilo nella norma con alcuni aspetti da migliorare."
+        color = "#f39c12"
+    else:
+        conclusion = "**ATTENZIONE RICHIESTA** - Consigliato approfondimento medico e modifiche allo stile di vita."
+        color = "#e74c3c"
+    
+    st.markdown(f"""
+    <div style='padding: 20px; background-color: {color}20; border-radius: 10px; border-left: 4px solid {color};'>
+        <h4>{conclusion}</h4>
+        <p><strong>Punteggio:</strong> {positive_count}/4 parametri ottimali</p>
+        <p><strong>Raccomandazione:</strong> { "Monitoraggio continuo consigliato" if positive_count >= 3 else "Implementa le raccomandazioni sopra indicate" }</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, selected_range):
+    """Crea il dashboard completo di analisi"""
+    
+    # 1. METRICHE PRINCIPALI
+    st.header("📊 Analisi Comparativa Completa")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.subheader("Nostro Algoritmo")
+        st.metric("SDNN", f"{metrics['our_algo']['sdnn']:.1f} ms")
+        st.metric("RMSSD", f"{metrics['our_algo']['rmssd']:.1f} ms")
+        st.metric("Coerenza", f"{metrics['our_algo']['coherence']:.1f}%")
+        st.metric("HR Medio", f"{metrics['our_algo']['hr_mean']:.1f} bpm")
+        
+    with col2:
+        st.subheader("EmWave Style")
+        st.metric("SDNN", f"{metrics['emwave_style']['sdnn']:.1f} ms")
+        st.metric("RMSSD", f"{metrics['emwave_style']['rmssd']:.1f} ms")
+        st.metric("Coerenza", f"{metrics['emwave_style']['coherence']:.1f}%")
+        st.metric("HR Medio", f"{metrics['emwave_style']['hr_mean']:.1f} bpm")
+        
+    with col3:
+        st.subheader("Kubios Style")
+        st.metric("SDNN", f"{metrics['kubios_style']['sdnn']:.1f} ms")
+        st.metric("RMSSD", f"{metrics['kubios_style']['rmssd']:.1f} ms")
+        st.metric("Coerenza", f"{metrics['kubios_style']['coherence']:.1f}%")
+        st.metric("HR Medio", f"{metrics['kubios_style']['hr_mean']:.1f} bpm")
+    
+    # 2. GRAFICO ANDAMENTO TEMPORALE CON ORE REALI
+    st.header("📈 Andamento Temporale HRV")
+    fig_timeseries = create_hrv_timeseries_plot(metrics, st.session_state.activities, start_datetime, end_datetime)
+    st.plotly_chart(fig_timeseries, use_container_width=True)
+    
+    # 3. METRICHE DI POTENZA
+    st.header("⚡ Analisi Spettrale")
+    col_power1, col_power2 = st.columns(2)
+    
+    with col_power1:
+        st.subheader("📊 Bande di Potenza")
+        st.metric("Total Power", f"{metrics['our_algo']['total_power']:.0f} ms²")
+        st.metric("VLF Power", f"{metrics['our_algo']['vlf']:.0f} ms²")
+        st.metric("LF Power", f"{metrics['our_algo']['lf']:.0f} ms²")
+        st.metric("HF Power", f"{metrics['our_algo']['hf']:.0f} ms²")
+        st.metric("LF/HF Ratio", f"{metrics['our_algo']['lf_hf_ratio']:.2f}")
+    
+    with col_power2:
+        st.subheader("📈 Distribuzione Potenza")
+        fig_power = create_power_spectrum_plot(metrics)
+        st.plotly_chart(fig_power, use_container_width=True)
+    
+    # 4. INTERPRETAZIONE PER SESSO
+    create_interpretation_panel(metrics, st.session_state.user_profile['gender'], st.session_state.user_profile['age'])
+    
+    # 5. VALUTAZIONE COMPLETA CON CONCLUSIONI
+    create_comprehensive_evaluation(metrics, st.session_state.user_profile['gender'], st.session_state.user_profile['age'])
+    
+    # 6. ANALISI SONNO (SOLO SE C'È)
+    create_sleep_analysis(metrics)
+    
+    # 7. SALVA NELLO STORICO
+    analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
+    save_to_history(metrics, start_datetime, end_datetime, analysis_type, selected_range)
 
 # =============================================================================
 # INTERFACCIA PRINCIPALE - CORRETTA
