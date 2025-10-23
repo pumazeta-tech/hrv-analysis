@@ -38,7 +38,7 @@ def init_session_state():
         }
 
 # =============================================================================
-# FUNZIONI PER ESTRAZIONE DATA E ORA DAL FILE
+# FUNZIONI PER ESTRAZIONE DATA E ORA DAL FILE - CORRETTA
 # =============================================================================
 
 def extract_datetime_from_content(content):
@@ -54,7 +54,7 @@ def extract_datetime_from_content(content):
         except ValueError:
             pass
     
-    # Pattern alternativo
+    # Pattern alternativo per altri formati
     patterns = [
         r'(\d{1,2})[\./-](\d{1,2})[\./-](\d{4})[\sT](\d{1,2}):(\d{2}):(\d{2})',
         r'(\d{4})[\./-](\d{1,2})[\./-](\d{1,2})[\sT](\d{1,2}):(\d{2}):(\d{2})',
@@ -84,7 +84,7 @@ def estimate_recording_duration(rr_intervals):
     total_ms = np.sum(rr_intervals)
     duration_hours = total_ms / (1000 * 60 * 60)
     
-    return max(0.1, min(168.0, duration_hours))  # Limita tra 0.1 e 168 ore (7 giorni)
+    return max(0.1, min(168.0, duration_hours))
 
 # =============================================================================
 # GESTIONE DATA/ORA AUTOMATICA MIGLIORATA
@@ -99,16 +99,20 @@ def update_analysis_datetimes(uploaded_file, rr_intervals=None):
         try:
             content = uploaded_file.getvalue().decode('utf-8')
             file_datetime = extract_datetime_from_content(content)
-        except:
-            pass
+            st.success(f"📅 Data/ora rilevata dal file: {file_datetime.strftime('%d/%m/%Y %H:%M:%S')}")
+        except Exception as e:
+            st.warning(f"⚠️ Impossibile estrarre data/ora dal file: {e}")
+            file_datetime = datetime.now()
         
         # Se non abbiamo data/ora, usa valori di default
         if file_datetime is None:
             file_datetime = datetime.now()
+            st.info("ℹ️ Usata data/ora corrente come fallback")
         
         # Stima la durata
         if rr_intervals is not None and len(rr_intervals) > 0:
             duration_hours = estimate_recording_duration(rr_intervals)
+            st.info(f"⏱️ Durata stimata registrazione: {duration_hours:.2f} ore")
         else:
             duration_hours = 1.0
         
@@ -130,7 +134,7 @@ def get_analysis_datetimes():
     )
 
 # =============================================================================
-# PROFILO UTENTE
+# PROFILO UTENTE MIGLIORATO
 # =============================================================================
 
 def create_user_profile():
@@ -164,33 +168,74 @@ def create_user_profile():
         
         if st.button("💾 Salva Profilo", use_container_width=True, key="save_profile"):
             st.session_state.user_profile = {
-                'name': name,
-                'surname': surname,
+                'name': name.strip(),
+                'surname': surname.strip(),
                 'birth_date': birth_date,
                 'gender': gender,
                 'age': age
             }
             st.success("✅ Profilo salvato!")
+            st.rerun()
     
     # Mostra profilo corrente
-    if st.session_state.user_profile['name']:
-        st.sidebar.info(f"**Utente:** {st.session_state.user_profile['name']} {st.session_state.user_profile['surname']}")
-        st.sidebar.info(f"**Età:** {st.session_state.user_profile['age']} anni | **Sesso:** {st.session_state.user_profile['gender']}")
+    profile = st.session_state.user_profile
+    if profile['name']:
+        st.sidebar.info(f"**Utente:** {profile['name']} {profile['surname']}")
+        st.sidebar.info(f"**Età:** {profile['age']} anni | **Sesso:** {profile['gender']}")
 
-def adjust_metrics_for_gender(metrics, gender):
-    """Aggiusta le metriche in base al sesso"""
+def interpret_metrics_for_gender(metrics, gender, age):
+    """Aggiusta e interpreta le metriche in base a sesso ed età"""
     adjusted_metrics = metrics.copy()
     
+    # Fattori di aggiustamento per sesso
     if gender == "Donna":
         # Donne tendono ad avere valori HRV leggermente più alti
-        adjustment_factor = 1.1
+        sdnn_factor = 1.1
+        rmssd_factor = 1.15
+        coherence_factor = 1.05
     else:
         # Uomini - valori standard
-        adjustment_factor = 1.0
+        sdnn_factor = 1.0
+        rmssd_factor = 1.0
+        coherence_factor = 1.0
     
-    adjusted_metrics['our_algo']['sdnn'] *= adjustment_factor
-    adjusted_metrics['our_algo']['rmssd'] *= adjustment_factor
-    adjusted_metrics['our_algo']['coherence'] *= adjustment_factor
+    # Aggiustamento per età
+    age_factor = max(0.7, 1.0 - (age - 25) * 0.005)  # Riduzione dopo i 25 anni
+    
+    # Applica aggiustamenti
+    adjusted_metrics['our_algo']['sdnn'] *= sdnn_factor * age_factor
+    adjusted_metrics['our_algo']['rmssd'] *= rmssd_factor * age_factor
+    adjusted_metrics['our_algo']['coherence'] *= coherence_factor
+    
+    # Interpretazioni specifiche per sesso
+    if gender == "Donna":
+        sdnn_interpretation = {
+            'basso': '< 35 ms',
+            'normale': '35-65 ms', 
+            'alto': '> 65 ms'
+        }
+        rmssd_interpretation = {
+            'basso': '< 25 ms',
+            'normale': '25-45 ms',
+            'alto': '> 45 ms'
+        }
+    else:
+        sdnn_interpretation = {
+            'basso': '< 30 ms',
+            'normale': '30-60 ms',
+            'alto': '> 60 ms'
+        }
+        rmssd_interpretation = {
+            'basso': '< 20 ms',
+            'normale': '20-40 ms', 
+            'alto': '> 40 ms'
+        }
+    
+    adjusted_metrics['interpretation'] = {
+        'sdnn': sdnn_interpretation,
+        'rmssd': rmssd_interpretation,
+        'gender_specific': True
+    }
     
     return adjusted_metrics
 
@@ -299,6 +344,7 @@ def create_activity_diary():
                         }
                         st.session_state.activities.append(activity)
                         st.success("✅ Attività salvata!")
+                        st.rerun()
                 else:
                     st.error("❌ Inserisci un nome per l'attività")
         
@@ -306,6 +352,7 @@ def create_activity_diary():
             if st.button("🗑️ Cancella Tutto", use_container_width=True, key="clear_activities"):
                 st.session_state.activities = []
                 st.success("✅ Tutte le attività cancellate!")
+                st.rerun()
     
     if st.session_state.activities:
         st.sidebar.subheader("📋 Attività Salvate")
@@ -319,7 +366,7 @@ def create_activity_diary():
                     st.rerun()
 
 # =============================================================================
-# STORICO ANALISI
+# STORICO ANALISI CORRETTO
 # =============================================================================
 
 def save_to_history(metrics, start_datetime, end_datetime, analysis_type, selected_range):
@@ -330,7 +377,7 @@ def save_to_history(metrics, start_datetime, end_datetime, analysis_type, select
         'end_datetime': end_datetime,
         'analysis_type': analysis_type,
         'selected_range': selected_range,
-        'user_profile': st.session_state.user_profile.copy(),
+        'user_profile': st.session_state.user_profile.copy(),  # COPIA CORRETTA
         'metrics': {
             'sdnn': metrics['our_algo']['sdnn'],
             'rmssd': metrics['our_algo']['rmssd'],
@@ -342,25 +389,33 @@ def save_to_history(metrics, start_datetime, end_datetime, analysis_type, select
     st.session_state.analysis_history.append(analysis_data)
 
 def show_analysis_history():
-    """Mostra lo storico delle analisi"""
+    """Mostra lo storico delle analisi - VERSIONE CORRETTA"""
     if st.session_state.analysis_history:
         st.sidebar.header("📊 Storico Analisi")
         
         history_data = []
         for i, analysis in enumerate(reversed(st.session_state.analysis_history[-5:])):
-            user = analysis['user_profile']
+            # CONTROLLO DI SICUREZZA per evitare KeyError
+            user_profile = analysis.get('user_profile', {})
+            metrics = analysis.get('metrics', {})
+            
+            user_name = f"{user_profile.get('name', 'N/A')} {user_profile.get('surname', '')}".strip()
+            if not user_name:
+                user_name = "N/A"
+                
             history_data.append({
                 'Data': analysis['start_datetime'].strftime('%d/%m %H:%M'),
-                'Utente': f"{user['name']} {user['surname']}" if user['name'] else "N/A",
-                'SDNN': f"{analysis['metrics']['sdnn']:.1f}",
-                'RMSSD': f"{analysis['metrics']['rmssd']:.1f}",
+                'Utente': user_name,
+                'SDNN': f"{metrics.get('sdnn', 0):.1f}",
+                'RMSSD': f"{metrics.get('rmssd', 0):.1f}",
             })
         
-        df_history = pd.DataFrame(history_data)
-        st.sidebar.dataframe(df_history, use_container_width=True, hide_index=True)
+        if history_data:
+            df_history = pd.DataFrame(history_data)
+            st.sidebar.dataframe(df_history, use_container_width=True, hide_index=True)
 
 # =============================================================================
-# FUNZIONI DI ANALISI HRV
+# FUNZIONI DI ANALISI HRV MIGLIORATE
 # =============================================================================
 
 def calculate_triple_metrics(total_hours, actual_date, is_sleep_period=False, health_profile_factor=0.5):
@@ -373,15 +428,16 @@ def calculate_triple_metrics(total_hours, actual_date, is_sleep_period=False, he
         'sleep_hr': None, 'sleep_rem': None, 'sleep_deep': None, 'sleep_wakeups': None,
     }
     
-    if is_sleep_period and total_hours >= 6:
+    if is_sleep_period and total_hours >= 4:  # Ridotto a 4 ore minime
+        sleep_duration = min(8.0, total_hours * 0.9)
         sleep_metrics = {
-            'sleep_duration': min(8.0, total_hours * 0.9),
+            'sleep_duration': sleep_duration,
             'sleep_efficiency': min(95, 85 + np.random.normal(0, 5)),
             'sleep_coherence': 65 + np.random.normal(0, 3),
             'sleep_hr': 58 + np.random.normal(0, 2),
-            'sleep_rem': min(2.0, total_hours * 0.25),
-            'sleep_deep': min(1.5, total_hours * 0.2),
-            'sleep_wakeups': max(0, int(total_hours * 0.5)),
+            'sleep_rem': min(2.0, sleep_duration * 0.25),
+            'sleep_deep': min(1.5, sleep_duration * 0.2),
+            'sleep_wakeups': max(0, int(sleep_duration * 0.5)),
         }
 
     # Metriche base
@@ -482,29 +538,100 @@ def create_sleep_analysis(metrics):
             if efficiency > 90 and duration >= 7 and wakeups <= 2:
                 valutazione = "🎯 OTTIMA qualità del sonno"
                 colore = "#2ecc71"
+                consiglio = "Continua così! Il tuo sonno è ottimale."
             elif efficiency > 80 and duration >= 6:
                 valutazione = "👍 BUONA qualità del sonno" 
                 colore = "#f39c12"
+                consiglio = "Buon sonno. Piccoli miglioramenti possibili nella continuità."
             else:
                 valutazione = "⚠️ QUALITÀ da migliorare"
                 colore = "#e74c3c"
+                consiglio = "Considera routine serale più regolare e ambiente più silenzioso."
             
             st.markdown(f"""
             <div style='padding: 20px; background-color: {colore}20; border-radius: 10px; border-left: 4px solid {colore};'>
                 <h4>{valutazione}</h4>
                 <p><strong>Durata:</strong> {duration:.1f}h | <strong>Efficienza:</strong> {efficiency:.0f}%</p>
                 <p><strong>Risvegli:</strong> {wakeups} | <strong>HR notte:</strong> {hr_night:.0f} bpm</p>
+                <p><strong>Consiglio:</strong> {consiglio}</p>
             </div>
             """, unsafe_allow_html=True)
             
             if duration > 0:
-                fig_pie = go.Figure(go.Pie(
-                    labels=['Sonno Leggero', 'Sonno REM', 'Sonno Profondo'],
-                    values=[duration - rem - deep, rem, deep],
-                    marker_colors=['#3498db', '#e74c3c', '#2ecc71']
-                ))
-                fig_pie.update_layout(title="Composizione Sonno")
-                st.plotly_chart(fig_pie, use_container_width=True)
+                light_sleep = duration - rem - deep
+                if light_sleep > 0:
+                    fig_pie = go.Figure(go.Pie(
+                        labels=['Sonno Leggero', 'Sonno REM', 'Sonno Profondo'],
+                        values=[light_sleep, rem, deep],
+                        marker_colors=['#3498db', '#e74c3c', '#2ecc71']
+                    ))
+                    fig_pie.update_layout(title="Composizione Sonno")
+                    st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        st.info("🌞 **Periodo diurno** - Analisi sonno disponibile solo per periodi notturni (22:00-06:00)")
+
+def create_interpretation_panel(metrics, gender, age):
+    """Crea pannello interpretazione con valori di riferimento per sesso"""
+    st.header("🎯 Interpretazione Risultati")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📈 Valori di Riferimento")
+        
+        if gender == "Donna":
+            st.markdown("""
+            **Per DONNE:**
+            - **SDNN:** 
+              - Basso: < 35 ms
+              - Normale: 35-65 ms  
+              - Alto: > 65 ms
+            - **RMSSD:**
+              - Basso: < 25 ms
+              - Normale: 25-45 ms
+              - Alto: > 45 ms
+            """)
+        else:
+            st.markdown("""
+            **Per UOMINI:**
+            - **SDNN:** 
+              - Basso: < 30 ms
+              - Normale: 30-60 ms  
+              - Alto: > 60 ms
+            - **RMSSD:**
+              - Basso: < 20 ms
+              - Normale: 20-40 ms
+              - Alto: > 40 ms
+            """)
+    
+    with col2:
+        st.subheader("📊 I Tuoi Valori")
+        
+        sdnn = metrics['our_algo']['sdnn']
+        rmssd = metrics['our_algo']['rmssd']
+        
+        # Valutazione SDNN
+        if gender == "Donna":
+            if sdnn < 35: sdnn_val = "🔴 Basso"
+            elif sdnn <= 65: sdnn_val = "🟢 Normale" 
+            else: sdnn_val = "🔵 Alto"
+        else:
+            if sdnn < 30: sdnn_val = "🔴 Basso"
+            elif sdnn <= 60: sdnn_val = "🟢 Normale"
+            else: sdnn_val = "🔵 Alto"
+            
+        # Valutazione RMSSD
+        if gender == "Donna":
+            if rmssd < 25: rmssd_val = "🔴 Basso"
+            elif rmssd <= 45: rmssd_val = "🟢 Normale"
+            else: rmssd_val = "🔵 Alto"
+        else:
+            if rmssd < 20: rmssd_val = "🔴 Basso"
+            elif rmssd <= 40: rmssd_val = "🟢 Normale"
+            else: rmssd_val = "🔵 Alto"
+        
+        st.metric("SDNN", f"{sdnn:.1f} ms", sdnn_val)
+        st.metric("RMSSD", f"{rmssd:.1f} ms", rmssd_val)
 
 def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, selected_range):
     """Crea il dashboard completo di analisi"""
@@ -532,10 +659,13 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, se
         st.metric("RMSSD", f"{metrics['kubios_style']['rmssd']:.1f} ms")
         st.metric("Coerenza", f"{metrics['kubios_style']['coherence']:.1f}%")
     
-    # 2. ANALISI SONNO (SOLO SE C'È)
+    # 2. INTERPRETAZIONE PER SESSO
+    create_interpretation_panel(metrics, st.session_state.user_profile['gender'], st.session_state.user_profile['age'])
+    
+    # 3. ANALISI SONNO (SOLO SE C'È)
     create_sleep_analysis(metrics)
     
-    # 3. SALVA NELLO STORICO
+    # 4. SALVA NELLO STORICO
     analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
     save_to_history(metrics, start_datetime, end_datetime, analysis_type, selected_range)
 
@@ -622,19 +752,23 @@ with st.sidebar:
         st.info(f"⏱️ **Analizzerai:** {selected_duration:.1f} ore")
         st.info(f"📅 **Periodo:** {selected_start_dt.strftime('%d/%m %H:%M')} - {selected_end_dt.strftime('%d/%m %H:%M')}")
         
-        # VERIFICA SE C'È PERIODO NOTTURNO
+        # VERIFICA SE C'È PERIODO NOTTURNO (22:00-06:00)
         is_night_period = False
         current_time = selected_start_dt
+        night_hours = 0
+        
         while current_time < selected_end_dt:
             if 22 <= current_time.hour or current_time.hour <= 6:
                 is_night_period = True
-                break
-            current_time += timedelta(hours=1)
+                night_hours += 0.1  # Incrementa per ogni check
+            current_time += timedelta(hours=0.1)
         
         if is_night_period:
-            st.success("🌙 **Periodo notturno rilevato** - Analisi sonno disponibile")
+            st.success(f"🌙 **Periodo notturno rilevato** ({night_hours:.1f}h) - Analisi sonno disponibile")
+            include_sleep_default = True
         else:
             st.info("☀️ **Periodo diurno** - Analisi sonno non disponibile")
+            include_sleep_default = False
     
     # ALTRE IMPOSTAZIONI
     health_factor = st.slider(
@@ -643,11 +777,14 @@ with st.sidebar:
         help="0.1 = Sedentario, 1.0 = Atleta"
     )
     
-    include_sleep = st.checkbox(
-        "Includi analisi sonno", 
-        is_night_period if 'is_night_period' in locals() else False,
-        help="Disponibile solo per periodi notturni"
-    )
+    if 'include_sleep_default' in locals():
+        include_sleep = st.checkbox(
+            "Includi analisi sonno", 
+            include_sleep_default,
+            help="Disponibile solo per periodi notturni"
+        )
+    else:
+        include_sleep = False
     
     analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True)
 
@@ -663,75 +800,110 @@ if analyze_btn:
                     st.error("❌ Nessun dato RR valido trovato nel file")
                     st.stop()
                 
-                hrv_metrics = calculate_hrv_metrics_from_rr(rr_intervals)
+                # Calcola metriche reali
+                real_metrics = calculate_hrv_metrics_from_rr(rr_intervals)
                 
-                if hrv_metrics:
-                    st.success("✅ **ANALISI FILE COMPLETATA!**")
-                    
-                    # Crea metriche complete
-                    metrics = calculate_triple_metrics(
-                        total_hours=selected_duration,
-                        actual_date=selected_start_dt,
-                        is_sleep_period=include_sleep and is_night_period,
-                        health_profile_factor=health_factor
-                    )
-                    
-                    # Aggiorna con metriche reali dal file
-                    metrics['our_algo']['sdnn'] = hrv_metrics['sdnn']
-                    metrics['our_algo']['rmssd'] = hrv_metrics['rmssd']
-                    metrics['our_algo']['hr_mean'] = hrv_metrics['hr_mean']
-                    
-                    # Aggiusta per sesso
-                    metrics = adjust_metrics_for_gender(metrics, st.session_state.user_profile['gender'])
-                    
-                    create_complete_analysis_dashboard(metrics, selected_start_dt, selected_end_dt, f"{selected_duration:.1f}h")
-                    
+                if real_metrics is None:
+                    st.error("❌ Impossibile calcolare le metriche HRV")
+                    st.stop()
+                
+                # Crea metriche complete
+                metrics = {
+                    'our_algo': {
+                        'sdnn': real_metrics['sdnn'],
+                        'rmssd': real_metrics['rmssd'],
+                        'hr_mean': real_metrics['hr_mean'],
+                        'hr_min': max(40, real_metrics['hr_mean'] - 15),
+                        'hr_max': min(180, real_metrics['hr_mean'] + 30),
+                        'actual_date': selected_start_dt,
+                        'recording_hours': selected_duration,
+                        'is_sleep_period': include_sleep,
+                        'health_profile_factor': health_factor,
+                        'coherence': max(20, 40 + (40 * health_factor)),
+                        'total_power': real_metrics['sdnn'] * 100,
+                        'vlf': real_metrics['sdnn'] * 20,
+                        'lf': real_metrics['sdnn'] * 50,
+                        'hf': real_metrics['rmssd'] * 80,
+                        'lf_hf_ratio': 1.5,
+                    }
+                }
+                
+                # Aggiungi metriche sonno se richiesto
+                if include_sleep and selected_duration >= 4:
+                    sleep_duration = min(8.0, selected_duration * 0.9)
+                    metrics['our_algo'].update({
+                        'sleep_duration': sleep_duration,
+                        'sleep_efficiency': min(95, 85 + np.random.normal(0, 5)),
+                        'sleep_coherence': 65 + np.random.normal(0, 3),
+                        'sleep_hr': 58 + np.random.normal(0, 2),
+                        'sleep_rem': min(2.0, sleep_duration * 0.25),
+                        'sleep_deep': min(1.5, sleep_duration * 0.2),
+                        'sleep_wakeups': max(0, int(sleep_duration * 0.5)),
+                    })
+                
+                # Aggiungi stili comparativi
+                metrics.update({
+                    'emwave_style': {
+                        'sdnn': real_metrics['sdnn'] * 0.7,
+                        'rmssd': real_metrics['rmssd'] * 0.7,
+                        'hr_mean': real_metrics['hr_mean'] + 2,
+                        'coherence': 50
+                    },
+                    'kubios_style': {
+                        'sdnn': real_metrics['sdnn'] * 1.3,
+                        'rmssd': real_metrics['rmssd'] * 1.3,
+                        'hr_mean': real_metrics['hr_mean'] - 2,
+                        'coherence': 70
+                    }
+                })
+                
+                # Aggiusta per sesso
+                adjusted_metrics = interpret_metrics_for_gender(
+                    metrics, 
+                    st.session_state.user_profile['gender'],
+                    st.session_state.user_profile['age']
+                )
+                
+                # Mostra dashboard
+                create_complete_analysis_dashboard(
+                    adjusted_metrics, 
+                    selected_start_dt, 
+                    selected_end_dt,
+                    f"{selected_duration:.1f}h"
+                )
+                
             except Exception as e:
-                st.error(f"❌ Errore nel processare il file: {e}")
-        
+                st.error(f"❌ Errore nell'analisi del file: {e}")
+                st.stop()
         else:
             # ANALISI SIMULATA
-            metrics = calculate_triple_metrics(
-                total_hours=selected_duration,
-                actual_date=selected_start_dt,
-                is_sleep_period=include_sleep and is_night_period,
-                health_profile_factor=health_factor
-            )
-            
-            # Aggiusta per sesso
-            metrics = adjust_metrics_for_gender(metrics, st.session_state.user_profile['gender'])
-            
-            st.success("✅ **ANALISI SIMULATA COMPLETATA!**")
-            create_complete_analysis_dashboard(metrics, selected_start_dt, selected_end_dt, f"{selected_duration:.1f}h")
+            try:
+                metrics = calculate_triple_metrics(
+                    selected_duration, 
+                    selected_start_dt, 
+                    is_sleep_period=include_sleep,
+                    health_profile_factor=health_factor
+                )
+                
+                # Aggiusta per sesso
+                adjusted_metrics = interpret_metrics_for_gender(
+                    metrics, 
+                    st.session_state.user_profile['gender'],
+                    st.session_state.user_profile['age']
+                )
+                
+                # Mostra dashboard
+                create_complete_analysis_dashboard(
+                    adjusted_metrics, 
+                    selected_start_dt, 
+                    selected_end_dt,
+                    f"{selected_duration:.1f}h"
+                )
+                
+            except Exception as e:
+                st.error(f"❌ Errore nell'analisi simulata: {e}")
+                st.stop()
 
-else:
-    # SCHERMATA INIZIALE
-    st.info("👆 **Configura l'analisi dalla sidebar**")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("🎯 Flusso di Lavoro")
-        st.markdown("""
-        1. **👤 Inserisci profilo utente**
-        2. **📁 Carica file IBI** (data/ora automatiche)
-        3. **📝 Aggiungi attività** nel diario
-        4. **🎯 Seleziona intervallo** da analizzare
-        5. **🚀 Avvia analisi** completa
-        6. **📊 Consulta storico** analisi
-        """)
-    
-    with col2:
-        st.subheader("🆕 Nuove Funzionalità")
-        st.markdown("""
-        - 👤 **Profilo utente** completo
-        - 📅 **Data/ora automatiche** dal file
-        - 🎯 **Selezione intervallo** flessibile
-        - 🌙 **Rilevamento automatico** periodo notturno
-        - ⚖️ **Metriche aggiustate** per sesso
-        - 📊 **Storico** analisi personalizzato
-        """)
-
-# Footer
+# FOOTER
 st.markdown("---")
-st.markdown("**HRV Analytics ULTIMATE** - Creato da Roberto con ❤️")
+st.markdown("**HRV Analytics ULTIMATE** - Sviluppato per Roberto")
