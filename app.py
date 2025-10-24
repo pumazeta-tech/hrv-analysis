@@ -43,6 +43,15 @@ def init_session_state():
         st.session_state.recording_end_datetime = None
     if 'user_database' not in st.session_state:
         st.session_state.user_database = {}
+    # AGGIUNGI QUESTI NUOVI STATI
+    if 'last_analysis_metrics' not in st.session_state:
+        st.session_state.last_analysis_metrics = None
+    if 'last_analysis_start' not in st.session_state:
+        st.session_state.last_analysis_start = None
+    if 'last_analysis_end' not in st.session_state:
+        st.session_state.last_analysis_end = None
+    if 'last_analysis_duration' not in st.session_state:
+        st.session_state.last_analysis_duration = None
 
 # =============================================================================
 # FUNZIONI PER GESTIONE DATABASE UTENTI
@@ -1413,48 +1422,60 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, se
 st.markdown("---")
 st.header("📄 Esporta Report Completo")
 
-# Usa una chiave univoca per evitare conflitti
-if st.button("🖨️ Genera Report Completo (PDF)", type="primary", use_container_width=True, key="generate_pdf_report_final"):
-    with st.spinner("📊 Generando report PDF..."):
-        try:
-            # Assicurati che adjusted_metrics sia disponibile
-            if 'adjusted_metrics' not in locals() and 'adjusted_metrics' not in globals():
-                st.error("❌ Errore: esegui prima l'analisi completa")
-                st.stop()
-            
-            pdf_buffer = create_pdf_report(
-                adjusted_metrics,  # USA adjusted_metrics invece di metrics
-                start_datetime, 
-                end_datetime, 
-                selected_range,
-                st.session_state.user_profile,
-                st.session_state.activities
-            )
-            
-            st.success("✅ Report PDF generato con successo!")
-            
-            # Crea un download button con chiave univoca
-            st.download_button(
-                label="📥 Scarica Report Completo (PDF)",
-                data=pdf_buffer,
-                file_name=f"report_hrv_{st.session_state.user_profile['name']}_{start_datetime.strftime('%Y%m%d_%H%M')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                key="download_pdf_report_final"
-            )
-            
-        except Exception as e:
-            st.error(f"❌ Errore nella generazione del report PDF: {str(e)}")
+# Verifica se c'è un'analisi disponibile
+analysis_available = ('last_analysis_metrics' in st.session_state and 
+                     st.session_state.last_analysis_metrics is not None)
+
+if not analysis_available:
+    st.warning("⚠️ **Esegui prima un'analisi completa** per generare il report")
+else:
+    # Usa una chiave univoca per evitare conflitti
+    if st.button("🖨️ Genera Report Completo (PDF)", type="primary", use_container_width=True, key="generate_pdf_report_final"):
+        with st.spinner("📊 Generando report PDF..."):
+            try:
+                # Usa i metrics salvati nello session state
+                pdf_buffer = create_pdf_report(
+                    st.session_state.last_analysis_metrics,
+                    st.session_state.last_analysis_start, 
+                    st.session_state.last_analysis_end, 
+                    st.session_state.last_analysis_duration,
+                    st.session_state.user_profile,
+                    st.session_state.activities
+                )
+                
+                st.success("✅ Report PDF generato con successo!")
+                
+                # Crea un download button con chiave univoca
+                st.download_button(
+                    label="📥 Scarica Report Completo (PDF)",
+                    data=pdf_buffer,
+                    file_name=f"report_hrv_{st.session_state.user_profile['name']}_{st.session_state.last_analysis_start.strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="download_pdf_report_final"
+                )
+                
+                st.info("📄 **Il report PDF include:** Metriche HRV, analisi spettrale, confronto algoritmi, valutazioni cliniche e referenze scientifiche")
+                
+            except Exception as e:
+                st.error(f"❌ Errore nella generazione del report PDF: {str(e)}")
+                st.info("💡 Assicurati che ReportLab sia installato: `pip install reportlab`")
     
     # 8. SALVA NEL DATABASE UTENTE - SOLO SE L'ANALISI È COMPLETATA
-    try:
-        analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
-        if save_analysis_to_user_database(metrics, start_datetime, end_datetime, selected_range, analysis_type):
-            st.success("✅ Analisi salvata nello storico utente!")
-    except NameError as e:
-        st.error("❌ Errore nel salvataggio: le metriche non sono state calcolate correttamente")
-    except Exception as e:
-        st.error(f"❌ Errore nel salvataggio: {str(e)}")
+            # SALVA NEL DATABASE E NELLO SESSION STATE
+            try:
+                analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
+                
+                # SALVA I METRICHE NELLO SESSION STATE
+                st.session_state.last_analysis_metrics = adjusted_metrics
+                st.session_state.last_analysis_start = start_datetime
+                st.session_state.last_analysis_end = end_datetime
+                st.session_state.last_analysis_duration = f"{selected_duration:.1f}h"
+                
+                if save_analysis_to_user_database(adjusted_metrics, start_datetime, end_datetime, f"{selected_duration:.1f}h", analysis_type):
+                    st.success("✅ Analisi salvata nello storico utente!")
+            except Exception as e:
+                st.error(f"❌ Errore nel salvataggio dello storico: {e}")
     
     # 9. MOSTRA STORICO UTENTE
     show_user_analysis_history()
