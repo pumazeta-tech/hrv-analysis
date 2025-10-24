@@ -1422,12 +1422,23 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, se
 st.markdown("---")
 st.header("📄 Esporta Report Completo")
 
+# DEBUG: Mostra cosa c'è nel session state
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔍 DEBUG Session State")
+st.sidebar.write(f"last_analysis_metrics: {'presente' if 'last_analysis_metrics' in st.session_state else 'assente'}")
+if 'last_analysis_metrics' in st.session_state:
+    st.sidebar.write(f"Valore: {st.session_state.last_analysis_metrics is not None}")
+st.sidebar.write(f"file_uploaded: {st.session_state.file_uploaded}")
+
 # Verifica se c'è un'analisi disponibile
 analysis_available = ('last_analysis_metrics' in st.session_state and 
                      st.session_state.last_analysis_metrics is not None)
 
+st.write(f"🔍 DEBUG: analysis_available = {analysis_available}")
+
 if not analysis_available:
     st.warning("⚠️ **Esegui prima un'analisi completa** per generare il report")
+    st.info("💡 Assicurati di: 1) Compilare il profilo utente, 2) Eseguire l'analisi con il bottone '🚀 ANALISI COMPLETA'")
 else:
     # Usa una chiave univoca per evitare conflitti
     if st.button("🖨️ Genera Report Completo (PDF)", type="primary", use_container_width=True, key="generate_pdf_report_final"):
@@ -1462,18 +1473,21 @@ else:
                 st.info("💡 Assicurati che ReportLab sia installato: `pip install reportlab`")
     
     # 8. SALVA NEL DATABASE UTENTE - SOLO SE L'ANALISI È COMPLETATA
-            # SALVA NEL DATABASE E NELLO SESSION STATE
+            # SALVA NEL DATABASE E NELLO SESSION STATE - VERSIONE MIGLIORATA
             try:
                 analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
                 
-                # SALVA I METRICHE NELLO SESSION STATE
-                st.session_state.last_analysis_metrics = adjusted_metrics
+                # SALVA ESPLICITAMENTE I METRICHE NELLO SESSION STATE
+                st.session_state.last_analysis_metrics = adjusted_metrics.copy()  # Usa copy() per sicurezza
                 st.session_state.last_analysis_start = start_datetime
                 st.session_state.last_analysis_end = end_datetime
                 st.session_state.last_analysis_duration = f"{selected_duration:.1f}h"
                 
+                st.write(f"💾 DEBUG: Metrics salvati nello session state: {st.session_state.last_analysis_metrics is not None}")
+                
                 if save_analysis_to_user_database(adjusted_metrics, start_datetime, end_datetime, f"{selected_duration:.1f}h", analysis_type):
                     st.success("✅ Analisi salvata nello storico utente!")
+                    
             except Exception as e:
                 st.error(f"❌ Errore nel salvataggio dello storico: {e}")
     
