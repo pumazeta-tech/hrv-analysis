@@ -1802,6 +1802,8 @@ if analyze_btn:
             except Exception as e:
                 st.error(f"❌ Errore nel salvataggio: {e}")
 
+# ... il tuo codice esistente ...
+
 else:
     st.info("👆 **Configura l'analisi dalla sidebar**")
     
@@ -1836,17 +1838,18 @@ else:
         """)
 
 # =============================================================================
-# SEZIONE ESPORTAZIONE PDF - DEVE ESSERE A LIVELLO 0 (NESSUN INDENT)
+# SEZIONE PDF - INIZIA QUI (ZERO INDENTAZIONE)
 # =============================================================================
-
 st.markdown("---")
 st.header("📄 Esporta Report Completo")
 
-# Verifica se abbiamo un'analisi disponibile
-has_analysis = (
-    'last_analysis_metrics' in st.session_state and 
-    st.session_state.last_analysis_metrics is not None
-)
+has_analysis = False
+try:
+    if 'last_analysis_metrics' in st.session_state:
+        if st.session_state.last_analysis_metrics is not None:
+            has_analysis = True
+except:
+    has_analysis = False
 
 if not has_analysis:
     st.warning("⚠️ **Esegui prima un'analisi completa** per generare il report")
@@ -1872,9 +1875,7 @@ else:
                     st.session_state.user_profile,
                     st.session_state.activities
                 )
-                
                 st.success("✅ Report PDF generato con successo!")
-                
                 st.download_button(
                     label="📥 Scarica Report Completo (PDF)",
                     data=pdf_buffer,
@@ -1883,10 +1884,8 @@ else:
                     use_container_width=True,
                     key="download_pdf_btn"
                 )
-                
             except Exception as e:
-                st.error(f"❌ Errore nella generazione del report: {str(e)}")
-                st.info("💡 Assicurati che ReportLab sia installato: `pip install reportlab`")
+                st.error(f"❌ Errore: {str(e)}")
 
 # FOOTER
 st.markdown("---")
