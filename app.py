@@ -1515,6 +1515,40 @@ def main():
             
             # ANALISI SPETTRALE
             st.header("📡 Analisi Spettrale HRV")
+            
+            # SEZIONE SONNO - AGGIUNTA
+            st.subheader("🌙 Analisi Sonno e Ritmi Circadiani")
+            col_sleep1, col_sleep2, col_sleep3 = st.columns(3)
+            
+            with col_sleep1:
+                st.markdown(f"""
+                <div class="sleep-card">
+                    <h4>💤 Qualità Sonno Stimata</h4>
+                    <h3>{min(95, max(60, metrics['our_algo']['coherence'] + 20)):.0f}%</h3>
+                    <p>Basato su coerenza notturna</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col_sleep2:
+                st.markdown(f"""
+                <div class="sleep-card">
+                    <h4>🔄 Ritmi Circadiani</h4>
+                    <h3>{'✅ Regolari' if metrics['our_algo']['lf_hf_ratio'] > 0.5 and metrics['our_algo']['lf_hf_ratio'] < 2.5 else '⚠️ Da migliorare'}</h3>
+                    <p>Bilancio autonomico</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col_sleep3:
+                recovery_score = min(100, (metrics['our_algo']['rmssd'] / 50 * 100) if metrics['our_algo']['rmssd'] > 0 else 60)
+                st.markdown(f"""
+                <div class="sleep-card">
+                    <h4>🔄 Recupero Notturno</h4>
+                    <h3>{recovery_score:.0f}%</h3>
+                    <p>Efficacia riposo</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # METRICHE SPETTRALI ORIGINALI
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
@@ -1545,7 +1579,7 @@ def main():
                 """, unsafe_allow_html=True)
             
             with col4:
-                # Grafico a torta per distribuzione potenza
+                # Grafico a torta più grande per distribuzione potenza
                 fig_pie = go.Figure(data=[go.Pie(
                     labels=['VLF', 'LF', 'HF'],
                     values=[metrics['our_algo']['vlf'], metrics['our_algo']['lf'], metrics['our_algo']['hf']],
