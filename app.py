@@ -1782,7 +1782,7 @@ if analyze_btn:
                 )
                 
             except Exception as e:
-                st.error(f"❌ Errore nella visualizzazione dei risultati: {e}")
+                st.error(f"❌ Errore nella visualizzazione dei resultados: {e}")
                 st.stop()
             
             # SALVA NEL DATABASE E PREPARA PER PDF
@@ -1801,8 +1801,6 @@ if analyze_btn:
                     
             except Exception as e:
                 st.error(f"❌ Errore nel salvataggio: {e}")
-
-# ... il tuo codice esistente ...
 
 else:
     st.info("👆 **Configura l'analisi dalla sidebar**")
@@ -1837,7 +1835,7 @@ else:
         - ⏰ **Campi ore più grandi** nelle attività
         """)
 
-# SEZIONE PDF
+# SEZIONE PDF - LIVELLO PRINCIPALE
 st.markdown("---")
 st.header("📄 Esporta Report Completo")
 
