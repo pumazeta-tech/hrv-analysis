@@ -1887,6 +1887,5 @@ else:
             except Exception as e:
                 st.error(f"❌ Errore: {str(e)}")
 
-# FOOTER
 st.markdown("---")
 st.markdown("**HRV Analytics ULTIMATE** - Sviluppato per Roberto")
