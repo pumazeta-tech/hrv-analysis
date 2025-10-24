@@ -406,245 +406,153 @@ def create_hrv_timeseries_plot_with_real_time(metrics, activities, start_datetim
 # =============================================================================
 
 def create_pdf_report(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[]):
-    """Crea report PDF BELLISSIMO con grafici"""
+    """Crea report PDF con grafici - VERSIONE ROBUSTA"""
+    
+    # Controlla se le dipendenze sono disponibili
     try:
-        # PRIMA prova con matplotlib/seaborn per grafici avanzati
         import matplotlib.pyplot as plt
         import seaborn as sns
         import numpy as np
         from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas
         from reportlab.lib.utils import ImageReader
-        import io
-        
-        # Crea grafici con matplotlib
+        DEPS_AVAILABLE = True
+    except ImportError as e:
+        print(f"Dipendenze non disponibili: {e}")
+        DEPS_AVAILABLE = False
+        return create_simple_pdf_fallback(metrics, start_datetime, user_profile)
+    
+    if not DEPS_AVAILABLE:
+        return create_simple_pdf_fallback(metrics, start_datetime, user_profile)
+    
+    try:
+        # Configura matplotlib
         plt.style.use('default')
         sns.set_theme(style="whitegrid")
         
-        # Crea una figura con subplots
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-        fig.suptitle('ANALISI HRV - SISTEMA NERVOSO AUTONOMO', fontsize=16, fontweight='bold', y=0.95)
+        # Crea figura con grafici
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
+        fig.suptitle('ANALISI HRV - SISTEMA NERVOSO AUTONOMO', fontsize=16, fontweight='bold')
         
-        # 1. GRAFICO METRICHE PRINCIPALI
-        ax1 = axes[0, 0]
-        metrics_names = ['SDNN', 'RMSSD', 'Coerenza']
-        metrics_values = [
-            metrics['our_algo']['sdnn'],
-            metrics['our_algo']['rmssd'], 
-            metrics['our_algo']['coherence']
-        ]
+        # 1. METRICHE PRINCIPALI
+        metrics_data = ['SDNN', 'RMSSD', 'Coerenza']
+        values = [metrics['our_algo']['sdnn'], metrics['our_algo']['rmssd'], metrics['our_algo']['coherence']]
         colors = ['#3498db', '#e74c3c', '#2ecc71']
         
-        bars = ax1.bar(metrics_names, metrics_values, color=colors, alpha=0.8)
-        ax1.set_ylabel('Valori', fontweight='bold')
-        ax1.set_title('📊 METRICHE PRINCIPALI HRV', fontweight='bold')
-        
-        # Aggiungi valori sulle barre
-        for bar, value in zip(bars, metrics_values):
-            height = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width()/2., height + 5,
+        bars1 = ax1.bar(metrics_data, values, color=colors, alpha=0.8)
+        ax1.set_title('📊 METRICHE PRINCIPALI')
+        ax1.set_ylabel('Valori')
+        for bar, value in zip(bars1, values):
+            ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1, 
                     f'{value:.1f}', ha='center', va='bottom', fontweight='bold')
         
-        # 2. GRAFICO POWER SPECTRUM
-        ax2 = axes[0, 1]
+        # 2. POWER SPECTRUM
         bands = ['VLF', 'LF', 'HF']
-        power_values = [
-            metrics['our_algo']['vlf'],
-            metrics['our_algo']['lf'],
-            metrics['our_algo']['hf']
-        ]
+        power = [metrics['our_algo']['vlf'], metrics['our_algo']['lf'], metrics['our_algo']['hf']]
         colors_power = ['#95a5a6', '#3498db', '#e74c3c']
         
-        bars_power = ax2.bar(bands, power_values, color=colors_power, alpha=0.8)
-        ax2.set_ylabel('Potenza (ms²)', fontweight='bold')
-        ax2.set_title('⚡ SPETTRO DI POTENZA', fontweight='bold')
-        
-        for bar, value in zip(bars_power, power_values):
-            height = bar.get_height()
-            ax2.text(bar.get_x() + bar.get_width()/2., height + max(power_values)*0.01,
+        bars2 = ax2.bar(bands, power, color=colors_power, alpha=0.8)
+        ax2.set_title('⚡ SPETTRO DI POTENZA')
+        ax2.set_ylabel('ms²')
+        for bar, value in zip(bars2, power):
+            ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(power)*0.01, 
                     f'{value:.0f}', ha='center', va='bottom', fontweight='bold')
         
-        # 3. GRAFICO CONFRONTO ALGORITMI
-        ax3 = axes[1, 0]
+        # 3. CONFRONTO ALGORITMI
         algorithms = ['Nostro', 'EmWave', 'Kubios']
-        sdnn_comparison = [
-            metrics['our_algo']['sdnn'],
-            metrics['emwave_style']['sdnn'],
-            metrics['kubios_style']['sdnn']
-        ]
+        sdnn_values = [metrics['our_algo']['sdnn'], metrics['emwave_style']['sdnn'], metrics['kubios_style']['sdnn']]
         
         x = np.arange(len(algorithms))
-        bars_algo = ax3.bar(x, sdnn_comparison, color=['#3498db', '#9b59b6', '#f39c12'], alpha=0.8)
+        bars3 = ax3.bar(x, sdnn_values, color=['#3498db', '#9b59b6', '#f39c12'], alpha=0.8)
+        ax3.set_title('🔍 CONFRONTO SDNN')
+        ax3.set_ylabel('ms')
         ax3.set_xticks(x)
         ax3.set_xticklabels(algorithms)
-        ax3.set_ylabel('SDNN (ms)', fontweight='bold')
-        ax3.set_title('🔍 CONFRONTO ALGORITMI', fontweight='bold')
-        
-        for bar, value in zip(bars_algo, sdnn_comparison):
-            height = bar.get_height()
-            ax3.text(bar.get_x() + bar.get_width()/2., height + 5,
+        for bar, value in zip(bars3, sdnn_values):
+            ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1, 
                     f'{value:.1f}', ha='center', va='bottom', fontweight='bold')
         
-        # 4. GRAFICO VALUTAZIONE
-        ax4 = axes[1, 1]
-        
-        # Calcola punteggi normalizzati
-        sdnn_score = min(100, (metrics['our_algo']['sdnn'] / 80) * 100)
-        rmssd_score = min(100, (metrics['our_algo']['rmssd'] / 50) * 100)
-        coherence_score = metrics['our_algo']['coherence']
-        
-        categories = ['SDNN', 'RMSSD', 'Coerenza']
-        scores = [sdnn_score, rmssd_score, coherence_score]
+        # 4. VALUTAZIONE
+        scores = [min(100, metrics['our_algo']['sdnn']), 
+                 min(100, metrics['our_algo']['rmssd'] * 2), 
+                 metrics['our_algo']['coherence']]
+        labels = ['SDNN', 'RMSSD', 'Coerenza']
         colors_score = ['#3498db', '#e74c3c', '#2ecc71']
         
-        bars_score = ax4.bar(categories, scores, color=colors_score, alpha=0.8)
+        bars4 = ax4.bar(labels, scores, color=colors_score, alpha=0.8)
+        ax4.set_title('⭐ VALUTAZIONE')
+        ax4.set_ylabel('Punteggio %')
         ax4.set_ylim(0, 100)
-        ax4.set_ylabel('Punteggio (%)', fontweight='bold')
-        ax4.set_title('⭐ VALUTAZIONE COMPLESSIVA', fontweight='bold')
-        ax4.axhline(y=80, color='green', linestyle='--', alpha=0.7, label='Ottimale')
-        ax4.axhline(y=60, color='orange', linestyle='--', alpha=0.7, label='Normale')
-        ax4.legend()
-        
-        for bar, score in zip(bars_score, scores):
-            height = bar.get_height()
-            ax4.text(bar.get_x() + bar.get_width()/2., height + 2,
-                    f'{score:.0f}%', ha='center', va='bottom', fontweight='bold')
+        for bar, value in zip(bars4, scores):
+            ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2, 
+                    f'{value:.0f}%', ha='center', va='bottom', fontweight='bold')
         
         plt.tight_layout()
         
-        # Salva il grafico in memoria
+        # Salva grafico
         img_buffer = io.BytesIO()
-        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', 
-                   facecolor='white', edgecolor='none')
+        plt.savefig(img_buffer, format='png', dpi=100, bbox_inches='tight')
         img_buffer.seek(0)
         plt.close()
         
-        # =========================================================================
-        # CREA IL PDF CON IL GRAFICO
-        # =========================================================================
+        # Crea PDF
         pdf_buffer = io.BytesIO()
         c = canvas.Canvas(pdf_buffer, pagesize=A4)
         width, height = A4
         
-        # HEADER
-        c.setFont("Helvetica-Bold", 18)
-        c.setFillColor('#2c3e50')
+        # Header
+        c.setFont("Helvetica-Bold", 16)
         c.drawString(50, height-50, "🧠 HRV - VALUTAZIONE DEL SISTEMA NERVOSO AUTONOMO")
         
-        # Informazioni paziente
+        # Info paziente
         c.setFont("Helvetica", 10)
-        c.setFillColor('#7f8c8d')
         c.drawString(50, height-80, f"Paziente: {user_profile.get('name', '')} {user_profile.get('surname', '')}")
         c.drawString(50, height-95, f"Età: {user_profile.get('age', '')} anni | Sesso: {user_profile.get('gender', '')}")
-        c.drawString(50, height-110, f"Data analisi: {start_datetime.strftime('%d/%m/%Y %H:%M')}")
-        c.drawString(50, height-125, f"Durata registrazione: {selected_range}")
+        c.drawString(50, height-110, f"Data: {start_datetime.strftime('%d/%m/%Y %H:%M')}")
+        c.drawString(50, height-125, f"Durata: {selected_range}")
         
-        # INSERISCI IL GRAFICO
+        # Inserisci grafico
         img = ImageReader(img_buffer)
-        c.drawImage(img, 30, height-550, width=540, height=400, preserveAspectRatio=True)
+        c.drawImage(img, 50, height-500, width=500, height=350)
         
-        # SEZIONE DATI NUMERICI
+        # Dettagli metriche
         c.setFont("Helvetica-Bold", 12)
-        c.setFillColor('#2c3e50')
-        c.drawString(50, height-580, "📈 DATI NUMERICI DETTAGLIATI:")
+        c.drawString(50, height-520, "DETTAGLIO METRICHE:")
         
         c.setFont("Helvetica", 9)
-        y_pos = height-600
-        
-        metric_details = [
-            ("SDNN (Variabilità Totale):", f"{metrics['our_algo']['sdnn']:.1f} ms"),
-            ("RMSSD (Parasimpatico):", f"{metrics['our_algo']['rmssd']:.1f} ms"),
-            ("Frequenza Cardiaca Media:", f"{metrics['our_algo']['hr_mean']:.1f} bpm"),
-            ("Coerenza Cardiaca:", f"{metrics['our_algo']['coherence']:.1f}%"),
-            ("Total Power:", f"{metrics['our_algo']['total_power']:.0f} ms²"),
-            ("Rapporto LF/HF:", f"{metrics['our_algo']['lf_hf_ratio']:.2f}"),
-            ("Banda VLF:", f"{metrics['our_algo']['vlf']:.0f} ms²"),
-            ("Banda LF:", f"{metrics['our_algo']['lf']:.0f} ms²"),
-            ("Banda HF:", f"{metrics['our_algo']['hf']:.0f} ms²")
+        details = [
+            f"SDNN: {metrics['our_algo']['sdnn']:.1f} ms | RMSSD: {metrics['our_algo']['rmssd']:.1f} ms",
+            f"HR: {metrics['our_algo']['hr_mean']:.1f} bpm | Coerenza: {metrics['our_algo']['coherence']:.1f}%",
+            f"Power: {metrics['our_algo']['total_power']:.0f} ms² | LF/HF: {metrics['our_algo']['lf_hf_ratio']:.2f}",
+            f"VLF: {metrics['our_algo']['vlf']:.0f} ms² | LF: {metrics['our_algo']['lf']:.0f} ms² | HF: {metrics['our_algo']['hf']:.0f} ms²"
         ]
         
-        for i, (label, value) in enumerate(metric_details):
-            x_pos = 50 if i % 2 == 0 else 300
-            if i % 2 == 0 and i > 0:
-                y_pos -= 15
-            c.drawString(x_pos, y_pos, f"{label} {value}")
-            if i % 2 == 1:
-                y_pos -= 15
+        y_pos = height-540
+        for detail in details:
+            c.drawString(60, y_pos, detail)
+            y_pos -= 15
         
-        # VALUTAZIONE CLINICA
-        y_pos -= 30
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, y_pos, "🎯 VALUTAZIONE CLINICA:")
-        
-        c.setFont("Helvetica", 9)
+        # Valutazione
         y_pos -= 20
-        
-        # Analisi automatica basata sui valori
-        sdnn = metrics['our_algo']['sdnn']
-        rmssd = metrics['our_algo']['rmssd']
-        gender = user_profile.get('gender', 'Uomo')
-        
-        if gender == "Donna":
-            sdnn_ok = sdnn >= 35
-            rmssd_ok = rmssd >= 25
-        else:
-            sdnn_ok = sdnn >= 30
-            rmssd_ok = rmssd >= 20
-        
-        if sdnn_ok and rmssd_ok:
-            assessment = "✅ PROFILO NELLA NORMA - Sistema nervoso autonomo ben bilanciato"
-            color = '#27ae60'
-        elif not sdnn_ok and not rmssd_ok:
-            assessment = "⚠️ ATTENZIONE - Ridotta variabilità cardiaca generale"
-            color = '#e74c3c'
-        elif not sdnn_ok:
-            assessment = "📉 VARIABILITÀ RIDOTTA - Consigliato training specifico"
-            color = '#f39c12'
-        else:
-            assessment = "📊 PROFILO DISOMOGENEO - Alcuni parametri ottimali"
-            color = '#f39c12'
-        
-        c.setFillColor(color)
-        c.drawString(60, y_pos, assessment)
-        
-        # RACCOMANDAZIONI
-        y_pos -= 30
-        c.setFillColor('#2c3e50')
         c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, y_pos, "💡 RACCOMANDAZIONI:")
+        c.drawString(50, y_pos, "VALUTAZIONE:")
         
         c.setFont("Helvetica", 9)
         y_pos -= 15
+        if metrics['our_algo']['sdnn'] > 50 and metrics['our_algo']['rmssd'] > 20:
+            assessment = "✅ Profilo nella norma - Sistema nervoso autonomo ben bilanciato"
+        else:
+            assessment = "⚠️ Consigliato approfondimento - Alcuni parametri fuori range"
         
-        recommendations = [
-            "• Pratica respirazione 5-5-5 (5 secondi inspiro, 5 espiro) per 5 minuti 2 volte al giorno",
-            "• Mantieni ritmi sonno-veglia regolari (7-9 ore per notte)",
-            "• Idratazione adeguata: 2-3 litri di acqua al giorno",
-            "• Attività fisica moderata: 30-45 minuti, 3-4 volte a settimana",
-            "• Riduci caffeina e stimolanti dopo le 16:00",
-            "• Tecniche di rilassamento: meditazione o yoga 10 minuti al giorno"
-        ]
-        
-        for rec in recommendations:
-            c.drawString(60, y_pos, rec)
-            y_pos -= 12
-        
-        # FOOTER
-        y_pos = 30
-        c.setFont("Helvetica-Oblique", 8)
-        c.setFillColor('#7f8c8d')
-        c.drawString(50, y_pos, f"Report generato il {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-        c.drawString(50, 20, "HRV Analytics ULTIMATE - Sviluppato per valutazioni cliniche")
+        c.drawString(60, y_pos, assessment)
         
         c.showPage()
         c.save()
         pdf_buffer.seek(0)
-        
         return pdf_buffer
         
     except Exception as e:
-        # Se qualcosa va storto, usa il fallback
-        print(f"Errore nella creazione PDF avanzato: {e}")
+        print(f"Errore nella creazione PDF: {e}")
         return create_simple_pdf_fallback(metrics, start_datetime, user_profile)
 
 def create_simple_pdf_fallback(metrics, start_datetime, user_profile):
@@ -1411,70 +1319,65 @@ with st.sidebar:
     
     start_datetime, end_datetime = get_analysis_datetimes()
     
-    st.markdown("---")
-    st.header("⚙️ Impostazioni Analisi")
+    # SEZIONE PDF
+st.markdown("---")
+st.header("📄 Esporta Report Completo")
+
+has_analysis = False
+try:
+    if 'last_analysis_metrics' in st.session_state:
+        if st.session_state.last_analysis_metrics is not None:
+            has_analysis = True
+except:
+    has_analysis = False
+
+if not has_analysis:
+    st.warning("⚠️ **Esegui prima un'analisi completa** per generare il report")
+    st.info("""
+    💡 **Istruzioni:**
+    1. Compila il profilo utente nella sidebar
+    2. Carica un file IBI o usa dati simulati  
+    3. Clicca sul bottone **'🚀 ANALISI COMPLETA'**
+    4. Aspetta che l'analisi finisca
+    5. Questa sezione mostrerà il bottone per il PDF!
+    """)
+else:
+    st.success("✅ **Analisi completata!** Ora puoi generare il report PDF")
     
-    if uploaded_file is not None:
-        st.success(f"📄 **File:** {uploaded_file.name}")
-        if rr_intervals_from_file is not None:
-            st.info(f"📊 **{len(rr_intervals_from_file)} intervalli RR**")
+    # 🔥 AGGIUNGI DEBUG INFO
+    try:
+        import matplotlib
+        import reportlab
+        st.info("✅ Dipendenze grafiche disponibili - PDF con grafici abilitato")
+    except ImportError:
+        st.warning("⚠️ Dipendenze grafiche non disponibili - PDF semplificato")
+        st.info("Per PDF con grafici: `pip install matplotlib reportlab`")
     
-    st.subheader("🎯 Selezione Intervallo Analisi")
-    
-    if uploaded_file is not None:
-        st.info(f"**Data/Ora inizio rilevazione:** {start_datetime.strftime('%d/%m/%Y %H:%M')}")
-        if st.session_state.recording_end_datetime:
-            st.info(f"**Data/Ora fine rilevazione:** {st.session_state.recording_end_datetime.strftime('%d/%m/%Y %H:%M')}")
-    
-    col_date1, col_time1 = st.columns(2)
-    with col_date1:
-        start_date = st.date_input(
-            "Data Inizio Analisi",
-            value=start_datetime.date(),
-            key="analysis_start_date"
-        )
-    with col_time1:
-        start_time = st.time_input(
-            "Ora Inizio Analisi",
-            value=start_datetime.time(),
-            key="analysis_start_time"
-        )
-    
-    col_date2, col_time2 = st.columns(2)
-    with col_date2:
-        end_date = st.date_input(
-            "Data Fine Analisi",
-            value=end_datetime.date(),
-            key="analysis_end_date"
-        )
-    with col_time2:
-        end_time = st.time_input(
-            "Ora Fine Analisi",
-            value=end_datetime.time(),
-            key="analysis_end_time"
-        )
-    
-    new_start_datetime = datetime.combine(start_date, start_time)
-    new_end_datetime = datetime.combine(end_date, end_time)
-    
-    datetime_changed = (new_start_datetime != start_datetime or new_end_datetime != end_datetime)
-    
-    if datetime_changed:
-        st.warning("⚠️ **Date modificate manualmente** - L'analisi userà le date selezionate")
-        st.session_state.analysis_datetimes = {
-            'start_datetime': new_start_datetime,
-            'end_datetime': new_end_datetime
-        }
-        start_datetime, end_datetime = new_start_datetime, new_end_datetime
-    
-    selected_duration = (end_datetime - start_datetime).total_seconds() / 3600
-    
-    if selected_duration <= 0:
-        st.error("❌ **Errore:** La data di fine deve essere successiva alla data di inizio")
-        selected_duration = 1.0
-    
-    st.info(f"⏱️ **Durata analisi:** {selected_duration:.1f} ore")
-    st.info(f"📅 **Periodo analisi:** {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}")
+    if st.button("🖨️ Genera Report Completo (PDF)", type="primary", use_container_width=True, key="generate_pdf_btn"):
+        with st.spinner("📊 Generando report PDF..."):
+            try:
+                pdf_buffer = create_pdf_report(
+                    st.session_state.last_analysis_metrics,
+                    st.session_state.last_analysis_start,
+                    st.session_state.last_analysis_end,
+                    st.session_state.last_analysis_duration,
+                    st.session_state.user_profile,
+                    st.session_state.activities
+                )
+                st.success("✅ Report PDF generato con successo!")
+                
+                st.download_button(
+                    label="📥 Scarica Report Completo (PDF)",
+                    data=pdf_buffer,
+                    file_name=f"HRV_Report_{st.session_state.user_profile['name']}_{st.session_state.last_analysis_start.strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="download_pdf_btn"
+                )
+                
+            except Exception as e:
+                st.error(f"❌ Errore nella generazione del report: {str(e)}")
+                st.info("Prova a installare: `pip install matplotlib reportlab`")
     
     # VERIFICA SE C'È PERIODO NOTTURNO (22:00-06:00)
     is_night_period = False
