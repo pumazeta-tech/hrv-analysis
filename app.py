@@ -43,7 +43,6 @@ def init_session_state():
         st.session_state.recording_end_datetime = None
     if 'user_database' not in st.session_state:
         st.session_state.user_database = {}
-    # AGGIUNGI QUESTI NUOVI STATI
     if 'last_analysis_metrics' not in st.session_state:
         st.session_state.last_analysis_metrics = None
     if 'last_analysis_start' not in st.session_state:
@@ -64,50 +63,39 @@ def get_user_key(user_profile):
     return f"{user_profile['name']}_{user_profile['surname']}_{user_profile['birth_date']}"
 
 def save_analysis_to_user_database(metrics, start_datetime, end_datetime, selected_range, analysis_type):
-    """Salva l'analisi nel database dell'utente - VERSIONE ROBUSTA"""
-    try:
-        user_key = get_user_key(st.session_state.user_profile)
-        if not user_key:
-            st.error("❌ Impossibile salvare: profilo utente incompleto")
-            return False
-        
-        # Verifica che le metriche esistano
-        if not metrics or 'our_algo' not in metrics:
-            st.error("❌ Impossibile salvare: metriche non valide")
-            return False
-        
-        if user_key not in st.session_state.user_database:
-            st.session_state.user_database[user_key] = {
-                'profile': st.session_state.user_profile.copy(),
-                'analyses': []
-            }
-        
-        analysis_data = {
-            'timestamp': datetime.now(),
-            'start_datetime': start_datetime,
-            'end_datetime': end_datetime,
-            'analysis_type': analysis_type,
-            'selected_range': selected_range,
-            'metrics': {
-                'sdnn': metrics['our_algo'].get('sdnn', 0),
-                'rmssd': metrics['our_algo'].get('rmssd', 0),
-                'hr_mean': metrics['our_algo'].get('hr_mean', 0),
-                'coherence': metrics['our_algo'].get('coherence', 0),
-                'recording_hours': metrics['our_algo'].get('recording_hours', 0),
-                'total_power': metrics['our_algo'].get('total_power', 0),
-                'vlf': metrics['our_algo'].get('vlf', 0),
-                'lf': metrics['our_algo'].get('lf', 0),
-                'hf': metrics['our_algo'].get('hf', 0),
-                'lf_hf_ratio': metrics['our_algo'].get('lf_hf_ratio', 0)
-            }
-        }
-        
-        st.session_state.user_database[user_key]['analyses'].append(analysis_data)
-        return True
-        
-    except Exception as e:
-        st.error(f"❌ Errore nel salvataggio dell'analisi: {str(e)}")
+    """Salva l'analisi nel database dell'utente"""
+    user_key = get_user_key(st.session_state.user_profile)
+    if not user_key:
         return False
+    
+    if user_key not in st.session_state.user_database:
+        st.session_state.user_database[user_key] = {
+            'profile': st.session_state.user_profile.copy(),
+            'analyses': []
+        }
+    
+    analysis_data = {
+        'timestamp': datetime.now(),
+        'start_datetime': start_datetime,
+        'end_datetime': end_datetime,
+        'analysis_type': analysis_type,
+        'selected_range': selected_range,
+        'metrics': {
+            'sdnn': metrics['our_algo']['sdnn'],
+            'rmssd': metrics['our_algo']['rmssd'],
+            'hr_mean': metrics['our_algo']['hr_mean'],
+            'coherence': metrics['our_algo']['coherence'],
+            'recording_hours': metrics['our_algo']['recording_hours'],
+            'total_power': metrics['our_algo']['total_power'],
+            'vlf': metrics['our_algo']['vlf'],
+            'lf': metrics['our_algo']['lf'],
+            'hf': metrics['our_algo']['hf'],
+            'lf_hf_ratio': metrics['our_algo']['lf_hf_ratio']
+        }
+    }
+    
+    st.session_state.user_database[user_key]['analyses'].append(analysis_data)
+    return True
 
 def get_user_analyses(user_profile):
     """Recupera tutte le analisi di un utente"""
@@ -418,274 +406,114 @@ def create_hrv_timeseries_plot_with_real_time(metrics, activities, start_datetim
 # =============================================================================
 
 def create_pdf_report(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[]):
-    """Crea un vero report PDF con referenze scientifiche"""
+    """Crea un report PDF"""
     try:
-        from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-        from reportlab.lib.units import inch
-        from reportlab.lib import colors
-        from reportlab.graphics.shapes import Drawing
-        from reportlab.graphics.charts.barcharts import VerticalBarChart
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
         import io
         
-        # Crea buffer per il PDF
         buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
         
-        # Crea il documento PDF
-        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch)
-        styles = getSampleStyleSheet()
-        story = []
-        
-        # Titolo principale
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=16,
-            spaceAfter=30,
-            alignment=1,  # Centered
-            textColor=colors.HexColor('#2c3e50')
-        )
-        
-        title_text = f"REPORT CARDIOLOGICO COMPLETO<br/>"
-        title_text += f"<font size=12>{start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}</font>"
-        story.append(Paragraph(title_text, title_style))
+        # Titolo
+        p.setFont("Helvetica-Bold", 16)
+        p.drawString(50, height-50, "REPORT CARDIOLOGICO HRV")
+        p.setFont("Helvetica", 10)
+        p.drawString(50, height-70, f"Generato il: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
         
         # Informazioni paziente
-        patient_style = ParagraphStyle(
-            'PatientInfo',
-            parent=styles['Normal'],
-            fontSize=10,
-            spaceAfter=12,
-            textColor=colors.HexColor('#34495e')
-        )
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(50, height-100, "INFORMAZIONI PAZIENTE:")
+        p.setFont("Helvetica", 10)
+        p.drawString(50, height-120, f"Nome: {user_profile.get('name', '')} {user_profile.get('surname', '')}")
+        p.drawString(50, height-140, f"Età: {user_profile.get('age', '')} anni | Sesso: {user_profile.get('gender', '')}")
+        p.drawString(50, height-160, f"Periodo analisi: {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}")
+        p.drawString(50, height-180, f"Durata: {selected_range}")
         
-        patient_info = f"""
-        <b>PAZIENTE:</b> {user_profile.get('name', '')} {user_profile.get('surname', '')} | 
-        <b>ETÀ:</b> {user_profile.get('age', '')} anni | 
-        <b>SESSO:</b> {user_profile.get('gender', '')} |
-        <b>DURATA ANALISI:</b> {selected_range}
-        """
-        story.append(Paragraph(patient_info, patient_style))
-        story.append(Spacer(1, 0.2*inch))
+        # Metriche principali
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(50, height-220, "METRICHE HRV PRINCIPALI:")
+        p.setFont("Helvetica", 10)
         
-        # 1. METRICHE PRINCIPALI
-        story.append(Paragraph("<b>📊 METRICHE HRV PRINCIPALI</b>", styles['Heading2']))
-        
-        # Tabella metriche principali
-        metrics_data = [
-            ['PARAMETRO', 'VALORE', 'VALUTAZIONE'],
-            ['SDNN', f"{metrics['our_algo']['sdnn']:.1f} ms", 
-             get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))],
-            ['RMSSD', f"{metrics['our_algo']['rmssd']:.1f} ms", 
-             get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))],
-            ['Frequenza Cardiaca', f"{metrics['our_algo']['hr_mean']:.1f} bpm", 
-             get_hr_evaluation(metrics['our_algo']['hr_mean'])],
-            ['Coerenza Cardiaca', f"{metrics['our_algo']['coherence']:.1f}%", 
-             get_coherence_evaluation(metrics['our_algo']['coherence'])],
-            ['Total Power', f"{metrics['our_algo']['total_power']:.0f} ms²", 
-             get_power_evaluation(metrics['our_algo']['total_power'])]
+        y_pos = height-240
+        metrics_list = [
+            ("SDNN", f"{metrics['our_algo']['sdnn']:.1f} ms"),
+            ("RMSSD", f"{metrics['our_algo']['rmssd']:.1f} ms"),
+            ("Frequenza Cardiaca", f"{metrics['our_algo']['hr_mean']:.1f} bpm"),
+            ("Coerenza", f"{metrics['our_algo']['coherence']:.1f}%"),
+            ("Total Power", f"{metrics['our_algo']['total_power']:.0f} ms²")
         ]
         
-        metrics_table = Table(metrics_data, colWidths=[2*inch, 1.5*inch, 2*inch])
-        metrics_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ecf0f1')),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7'))
-        ]))
-        story.append(metrics_table)
-        story.append(Spacer(1, 0.3*inch))
+        for metric_name, value in metrics_list:
+            p.drawString(70, y_pos, f"• {metric_name}: {value}")
+            y_pos -= 20
         
-        # 2. POWER SPECTRUM
-        story.append(Paragraph("<b>⚡ ANALISI SPETTRALE HRV</b>", styles['Heading2']))
+        # Power Spectrum
+        p.setFont("Helvetica-Bold", 12)
+        y_pos -= 20
+        p.drawString(50, y_pos, "ANALISI SPETTRALE:")
+        p.setFont("Helvetica", 10)
         
-        power_data = [
-            ['BANDA FREQUENZA', 'POTENZA (ms²)', 'INTERPRETAZIONE'],
-            ['VLF (0.003-0.04 Hz)', f"{metrics['our_algo']['vlf']:.0f}", 'Termoregolazione'],
-            ['LF (0.04-0.15 Hz)', f"{metrics['our_algo']['lf']:.0f}", 'Simpatica/Parasimpatica'],
-            ['HF (0.15-0.4 Hz)', f"{metrics['our_algo']['hf']:.0f}", 'Attività Parasimpatica'],
-            ['LF/HF Ratio', f"{metrics['our_algo']['lf_hf_ratio']:.2f}", 
-             'Ottimale' if 0.5 <= metrics['our_algo']['lf_hf_ratio'] <= 2.0 else 'Da monitorare']
+        y_pos -= 20
+        p.drawString(70, y_pos, f"• VLF: {metrics['our_algo']['vlf']:.0f} ms²")
+        y_pos -= 20
+        p.drawString(70, y_pos, f"• LF: {metrics['our_algo']['lf']:.0f} ms²")
+        y_pos -= 20
+        p.drawString(70, y_pos, f"• HF: {metrics['our_algo']['hf']:.0f} ms²")
+        y_pos -= 20
+        p.drawString(70, y_pos, f"• LF/HF Ratio: {metrics['our_algo']['lf_hf_ratio']:.2f}")
+        
+        # Referenze scientifiche
+        p.setFont("Helvetica-Bold", 12)
+        y_pos -= 40
+        p.drawString(50, y_pos, "REFERENZE SCIENTIFICHE:")
+        p.setFont("Helvetica", 8)
+        
+        y_pos -= 20
+        references = [
+            "• Task Force ESC/NASPE (1996) - Standard HRV",
+            "• Nunan et al. (2010) - Valori riferimento genere/età", 
+            "• Malik et al. (1996) - Interpretazione clinica HRV",
+            "• McCraty et al. (2009) - Coerenza cardiaca"
         ]
         
-        power_table = Table(power_data, colWidths=[2*inch, 1.5*inch, 2*inch])
-        power_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ebf5fb')),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#aed6f1'))
-        ]))
-        story.append(power_table)
-        story.append(Spacer(1, 0.3*inch))
+        for ref in references:
+            p.drawString(60, y_pos, ref)
+            y_pos -= 15
         
-        # 3. ANALISI SONNO (se disponibile)
-        sleep_data = metrics['our_algo']
-        if sleep_data.get('sleep_duration') and sleep_data['sleep_duration'] > 0:
-            story.append(Paragraph("<b>😴 ANALISI QUALITÀ DEL SONNO</b>", styles['Heading2']))
-            
-            sleep_metrics = [
-                ['PARAMETRO SONNO', 'VALORE', 'VALUTAZIONE'],
-                ['Durata Sonno', f"{sleep_data['sleep_duration']:.1f} h", 
-                 'Ottimale' if sleep_data['sleep_duration'] >= 7 else 'Sufficiente'],
-                ['Efficienza Sonno', f"{sleep_data.get('sleep_efficiency', 0):.1f}%", 
-                 'Eccellente' if sleep_data.get('sleep_efficiency', 0) > 85 else 'Buona'],
-                ['Coerenza Notturna', f"{sleep_data.get('sleep_coherence', 0):.1f}%", 
-                 get_coherence_evaluation(sleep_data.get('sleep_coherence', 0))],
-                ['Risvegli', f"{sleep_data.get('sleep_wakeups', 0):.0f}", 
-                 'Ottimo' if sleep_data.get('sleep_wakeups', 0) <= 3 else 'Normale'],
-                ['Sonno REM', f"{sleep_data.get('sleep_rem', 0):.1f} h", 'Adeguato'],
-                ['Sonno Profondo', f"{sleep_data.get('sleep_deep', 0):.1f} h", 'Adeguato']
-            ]
-            
-            sleep_table = Table(sleep_metrics, colWidths=[2*inch, 1.5*inch, 1.5*inch])
-            sleep_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#9b59b6')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f4ecf7')),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 9),
-                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#d7bde2'))
-            ]))
-            story.append(sleep_table)
-            story.append(Spacer(1, 0.3*inch))
-        
-        # 4. CONFRONTO ALGORITMI
-        story.append(Paragraph("<b>🔍 CONFRONTO ALGORITMI HRV</b>", styles['Heading2']))
-        
-        algo_data = [
-            ['ALGORITMO', 'SDNN (ms)', 'RMSSD (ms)', 'COERENZA (%)'],
-            ['Nostro Algoritmo', f"{metrics['our_algo']['sdnn']:.1f}", f"{metrics['our_algo']['rmssd']:.1f}", f"{metrics['our_algo']['coherence']:.1f}"],
-            ['EmWave Style', f"{metrics['emwave_style']['sdnn']:.1f}", f"{metrics['emwave_style']['rmssd']:.1f}", f"{metrics['emwave_style']['coherence']:.1f}"],
-            ['Kubios Style', f"{metrics['kubios_style']['sdnn']:.1f}", f"{metrics['kubios_style']['rmssd']:.1f}", f"{metrics['kubios_style']['coherence']:.1f}"]
-        ]
-        
-        algo_table = Table(algo_data, colWidths=[1.5*inch, 1.2*inch, 1.2*inch, 1.2*inch])
-        algo_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e67e22')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 9),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#fdebd0')),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#f5b041'))
-        ]))
-        story.append(algo_table)
-        story.append(Spacer(1, 0.3*inch))
-        
-        # 5. REFERENZE SCIENTIFICHE
-        story.append(Paragraph("<b>📚 REFERENZE SCIENTIFICHE</b>", styles['Heading2']))
-        
-        references_text = """
-        <b>Standard Internazionali HRV:</b><br/>
-        • Task Force of ESC/NASPE (1996) - Heart rate variability: Standards of measurement<br/>
-        • Malik M. et al. (1996) - Clinical use of HRV analysis<br/>
-        <br/>
-        <b>Valori di Riferimento:</b><br/>
-        • Nunan et al. (2010) - QJM: Valori normativi per genere ed età<br/>
-        • Shaffer F. & Ginsberg J.P. (2017) - Overview of HRV Metrics and Norms<br/>
-        <br/>
-        <b>Coerenza Cardiaca:</b><br/>
-        • McCraty R. et al. (2009) - Coherence: Bridging Personal and Global Health<br/>
-        • Lehrer P. & Gevirtz R. (2014) - Heart rate variability biofeedback
-        """
-        story.append(Paragraph(references_text, styles['Normal']))
-        story.append(Spacer(1, 0.2*inch))
-        
-        # 6. RACCOMANDAZIONI
-        story.append(Paragraph("<b>💡 RACCOMANDAZIONI CLINICHE</b>", styles['Heading2']))
-        
-        recommendations = f"""
-        • <b>Monitoraggio continuo</b> consigliato per tracciare l'andamento<br/>
-        • <b>Tecniche di respirazione coerente</b>: 5-10 minuti, 3 volte al giorno<br/>
-        • <b>Attività fisica moderata</b>: 30-45 minuti, 3-5 volte/settimana<br/>
-        • <b>Igiene del sonno</b>: mantenere orari regolari (7-9 ore per notte)<br/>
-        • <b>Gestione stress</b>: praticare meditazione o mindfulness<br/>
-        • <b>Idratazione</b>: 2-3 litri di acqua al giorno<br/>
-        • <b>Alimentazione bilanciata</b>: limitare caffeina dopo le 13:00<br/>
-        <br/>
-        <b>Valutazione complessiva:</b> {get_overall_evaluation(metrics, user_profile.get('gender', 'Uomo'))}
-        """
-        story.append(Paragraph(recommendations, styles['Normal']))
-        
-        # Data e firma
-        story.append(Spacer(1, 0.4*inch))
-        date_text = f"<i>Report generato il: {datetime.now().strftime('%d/%m/%Y %H:%M')}</i>"
-        story.append(Paragraph(date_text, styles['Italic']))
-        
-        # Genera il PDF
-        doc.build(story)
+        p.showPage()
+        p.save()
         buffer.seek(0)
         return buffer
         
     except Exception as e:
-        st.error(f"Errore nella creazione del PDF: {str(e)}")
-        # Fallback: crea un PDF semplice
-        return create_simple_pdf_fallback(metrics, start_datetime, user_profile)
-
-def create_simple_pdf_fallback(metrics, start_datetime, user_profile):
-    """Crea un PDF semplice come fallback"""
-    from reportlab.pdfgen import canvas
-    import io
-    
-    buffer = io.BytesIO()
-    p = canvas.Canvas(buffer)
-    
-    p.setFont("Helvetica-Bold", 16)
-    p.drawString(100, 800, "REPORT CARDIOLOGICO HRV")
-    
-    p.setFont("Helvetica", 12)
-    p.drawString(100, 770, f"Paziente: {user_profile.get('name', '')} {user_profile.get('surname', '')}")
-    p.drawString(100, 750, f"Data: {start_datetime.strftime('%d/%m/%Y %H:%M')}")
-    p.drawString(100, 730, f"SDNN: {metrics['our_algo']['sdnn']:.1f} ms")
-    p.drawString(100, 710, f"RMSSD: {metrics['our_algo']['rmssd']:.1f} ms")
-    p.drawString(100, 690, f"HR Medio: {metrics['our_algo']['hr_mean']:.1f} bpm")
-    
-    p.showPage()
-    p.save()
-    buffer.seek(0)
-    return buffer
-
-def get_overall_evaluation(metrics, gender):
-    """Restituisce una valutazione complessiva"""
-    sdnn = metrics['our_algo']['sdnn']
-    rmssd = metrics['our_algo']['rmssd']
-    coherence = metrics['our_algo']['coherence']
-    
-    good_count = 0
-    if (gender == "Donna" and sdnn >= 35) or (gender == "Uomo" and sdnn >= 30):
-        good_count += 1
-    if (gender == "Donna" and rmssd >= 25) or (gender == "Uomo" and rmssd >= 20):
-        good_count += 1
-    if coherence >= 50:
-        good_count += 1
-    
-    if good_count == 3:
-        return "ECCELLENTE - Profilo cardiovascolare ottimale"
-    elif good_count >= 2:
-        return "BUONO - Profilo nella norma con buona resilienza"
-    else:
-        return "DA MIGLIORARE - Consigliato monitoraggio attento"
+        # Fallback - testo semplice
+        import io
+        text_content = f"""
+        REPORT CARDIOLOGICO HRV
+        ========================
+        
+        Paziente: {user_profile.get('name', '')} {user_profile.get('surname', '')}
+        Data: {start_datetime.strftime('%d/%m/%Y %H:%M')}
+        
+        METRICHE PRINCIPALI:
+        - SDNN: {metrics['our_algo']['sdnn']:.1f} ms
+        - RMSSD: {metrics['our_algo']['rmssd']:.1f} ms  
+        - HR Medio: {metrics['our_algo']['hr_mean']:.1f} bpm
+        - Coerenza: {metrics['our_algo']['coherence']:.1f}%
+        
+        REFERENZE SCIENTIFICHE:
+        • Task Force ESC/NASPE (1996)
+        • Nunan et al. (2010)
+        • Malik et al. (1996)
+        
+        Report generato da HRV Analytics ULTIMATE
+        """
+        
+        buffer = io.BytesIO(text_content.encode('utf-8'))
+        return buffer
 
 # =============================================================================
 # PROFILO UTENTE
@@ -1030,45 +858,6 @@ def get_power_evaluation(power):
     elif power <= 3000: return "NORMALE"
     else: return "ALTO"
 
-def create_scientific_references():
-    """Aggiunge le referenze scientifiche al report"""
-    references = """
-    ## 📚 REFERENZE SCIENTIFICHE
-
-    ### VARIABILITÀ CARDIACA (HRV) - STANDARD INTERNAZIONALI:
-    - **Task Force of ESC/NASPE (1996)** - Heart rate variability: Standards of measurement, physiological interpretation, and clinical use
-    - **Shaffer F. & Ginsberg J.P. (2017)** - An Overview of Heart Rate Variability Metrics and Norms
-    - **Malik M. et al. (1996)** - Heart rate variability: Standards of measurement, physiological interpretation, and clinical use
-
-    ### VALORI DI RIFERIMENTO SDNN/RMSSD:
-    - **UOMINI:** 
-      - SDNN: <30 ms (Basso), 30-60 ms (Normale), >60 ms (Alto)
-      - RMSSD: <20 ms (Basso), 20-40 ms (Normale), >40 ms (Alto)
-    - **DONNE:**
-      - SDNN: <35 ms (Basso), 35-65 ms (Normale), >65 ms (Alto)  
-      - RMSSD: <25 ms (Basso), 25-45 ms (Normale), >45 ms (Alto)
-    - Fonte: *Nunan et al. (2010) - QJM: An International Journal of Medicine*
-
-    ### POWER SPECTRUM HRV:
-    - **VLF (0.003-0.04 Hz):** Regolazione termoregolazione, renina-angiotensina
-    - **LF (0.04-0.15 Hz):** Attività simpatica e parasimpatica
-    - **HF (0.15-0.4 Hz):** Attività parasimpatica (vagale)
-    - Fonte: *Acharya et al. (2006) - Heart rate variability analysis*
-
-    ### COERENZA CARDIACA:
-    - **McCraty R. et al. (2009)** - Coherence: Bridging Personal, Social and Global Health
-    - **Lehrer P. & Gevirtz R. (2014)** - Heart rate variability biofeedback
-
-    ### ANALISI SONNO E HRV:
-    - **Bonnemeier H. et al. (2003)** - Circadian profile of cardiac autonomic nervous modulation
-    - **Trinder J. et al. (2001)** - Autonomic activity during human sleep
-
-    ### APPLICAZIONI CLINICHE:
-    - **Kleiger R.E. et al. (2005)** - HRV and mortality risk post-MI
-    - **Thayer J.F. & Lane R.D. (2007)** - The role of vagal function
-    """
-    return references
-
 # =============================================================================
 # ANALISI SONNO COMPLETA
 # =============================================================================
@@ -1336,7 +1125,7 @@ def create_comprehensive_evaluation(metrics, gender, age):
             st.write(rec)
     
     # CONCLUSIONE FINALE
-    st.subheader("🎯 Conclusioni Finali")
+    st.subheader("🎯 Conclusioni Finales")
     
     positive_count = sum(1 for eval in [sdnn_eval, rmssd_eval, coherence_eval, hr_eval] if "🟢" in eval or "🔵" in eval)
     
@@ -1417,109 +1206,6 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, se
     
     # 6. ANALISI SONNO (SOLO SE C'È)
     create_sleep_analysis(metrics)
-    
-# 7. BOTTONE ESPORTA PDF - VERSIONE SICURA E FUNZIONANTE
-st.markdown("---")
-st.header("📄 Esporta Report Completo")
-
-# APPROCCIO SICURO: usa try/except per tutto
-try:
-    # Verifica in modo sicuro se abbiamo metrics disponibili
-    has_metrics = False
-    current_metrics = None
-    current_start = None
-    current_end = None
-    current_duration = None
-    
-    # Controlla prima le variabili locali (più affidabili)
-    try:
-        if 'adjusted_metrics' in locals() and adjusted_metrics is not None:
-            has_metrics = True
-            current_metrics = adjusted_metrics
-            current_start = start_datetime
-            current_end = end_datetime
-            current_duration = f"{selected_duration:.1f}h"
-    except:
-        pass
-    
-    # Se non in locali, controlla session state
-    if not has_metrics:
-        try:
-            if ('last_analysis_metrics' in st.session_state and 
-                st.session_state.last_analysis_metrics is not None):
-                has_metrics = True
-                current_metrics = st.session_state.last_analysis_metrics
-                current_start = st.session_state.get('last_analysis_start', datetime.now())
-                current_end = st.session_state.get('last_analysis_end', datetime.now() + timedelta(hours=1))
-                current_duration = st.session_state.get('last_analysis_duration', "1.0h")
-        except:
-            pass
-    
-    if not has_metrics:
-        st.warning("⚠️ **Esegui prima un'analisi completa** per generare il report")
-        st.info("""
-        💡 **Istruzioni:**
-        1. Compila il profilo utente nella sidebar
-        2. Carica un file IBI o usa dati simulati  
-        3. Clicca sul bottone **'🚀 ANALISI COMPLETA'**
-        4. Aspetta che l'analisi finisca
-        5. Il bottone PDF diventerà disponibile!
-        """)
-    else:
-        if st.button("🖨️ Genera Report Completo (PDF)", type="primary", use_container_width=True, key="generate_pdf_final"):
-            with st.spinner("📊 Generando report PDF..."):
-                try:
-                    pdf_buffer = create_pdf_report(
-                        current_metrics,
-                        current_start, 
-                        current_end, 
-                        current_duration,
-                        st.session_state.user_profile,
-                        st.session_state.activities
-                    )
-                    
-                    st.success("✅ Report PDF generato con successo!")
-                    
-                    st.download_button(
-                        label="📥 Scarica Report Completo (PDF)",
-                        data=pdf_buffer,
-                        file_name=f"report_hrv_{st.session_state.user_profile['name']}_{current_start.strftime('%Y%m%d_%H%M')}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True,
-                        key="download_pdf_final"
-                    )
-                    
-                    st.info("📄 **Il report PDF include:** Metriche HRV, analisi spettrale, confronto algoritmi, valutazioni cliniche e referenze scientifiche")
-                    
-                except Exception as e:
-                    st.error(f"❌ Errore nella generazione del report: {str(e)}")
-                    st.info("💡 Prova a installare ReportLab: `pip install reportlab`")
-
-except Exception as e:
-    st.error("❌ Errore nel sistema di esportazione")
-    st.info("Esegui prima un'analisi completa per generare report")
-    
-    # 8. SALVA NEL DATABASE UTENTE - SOLO SE L'ANALISI È COMPLETATA
-            # SALVA NEL DATABASE E NELLO SESSION STATE - VERSIONE MIGLIORATA
-            try:
-                analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
-                
-                # SALVA ESPLICITAMENTE I METRICHE NELLO SESSION STATE
-                st.session_state.last_analysis_metrics = adjusted_metrics.copy()  # Usa copy() per sicurezza
-                st.session_state.last_analysis_start = start_datetime
-                st.session_state.last_analysis_end = end_datetime
-                st.session_state.last_analysis_duration = f"{selected_duration:.1f}h"
-                
-                st.write(f"💾 DEBUG: Metrics salvati nello session state: {st.session_state.last_analysis_metrics is not None}")
-                
-                if save_analysis_to_user_database(adjusted_metrics, start_datetime, end_datetime, f"{selected_duration:.1f}h", analysis_type):
-                    st.success("✅ Analisi salvata nello storico utente!")
-                    
-            except Exception as e:
-                st.error(f"❌ Errore nel salvataggio dello storico: {e}")
-    
-    # 9. MOSTRA STORICO UTENTE
-    show_user_analysis_history()
 
 # =============================================================================
 # INTERFACCIA PRINCIPALE
@@ -1667,7 +1353,7 @@ with st.sidebar:
         key="include_sleep_checkbox"
     )
     
-analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True, key="analyze_btn")
+    analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True, key="analyze_btn")
 
 # MAIN CONTENT
 if analyze_btn:
@@ -1782,7 +1468,7 @@ if analyze_btn:
                 )
                 
             except Exception as e:
-                st.error(f"❌ Errore nella visualizzazione dei resultados: {e}")
+                st.error(f"❌ Errore nella visualizzazione dei risultati: {e}")
                 st.stop()
             
             # SALVA NEL DATABASE E PREPARA PER PDF
@@ -1835,7 +1521,7 @@ else:
         - ⏰ **Campi ore più grandi** nelle attività
         """)
 
-# SEZIONE PDF - LIVELLO PRINCIPALE
+# SEZIONE PDF
 st.markdown("---")
 st.header("📄 Esporta Report Completo")
 
@@ -1885,4 +1571,4 @@ else:
 
 # FOOTER
 st.markdown("---")
-st.markdown("**HRV Analytics ULTIMATE** - Sviluppato per Roberto")
+st.markdown
