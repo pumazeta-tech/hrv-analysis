@@ -1837,35 +1837,23 @@ else:
         - ⏰ **Campi ore più grandi** nelle attività
         """)
 
-# =============================================================================
-# SEZIONE PDF - INIZIA QUI (ZERO INDENTAZIONE)
-# =============================================================================
+# SEZIONE PDF
 st.markdown("---")
 st.header("📄 Esporta Report Completo")
 
 has_analysis = False
 try:
-    if 'last_analysis_metrics' in st.session_state:
-        if st.session_state.last_analysis_metrics is not None:
-            has_analysis = True
+    if 'last_analysis_metrics' in st.session_state and st.session_state.last_analysis_metrics is not None:
+        has_analysis = True
 except:
-    has_analysis = False
+    pass
 
 if not has_analysis:
-    st.warning("⚠️ **Esegui prima un'analisi completa** per generare il report")
-    st.info("""
-    💡 **Istruzioni:**
-    1. Compila il profilo utente nella sidebar
-    2. Carica un file IBI o usa dati simulati  
-    3. Clicca sul bottone **'🚀 ANALISI COMPLETA'**
-    4. Aspetta che l'analisi finisca
-    5. Questa sezione mostrerà il bottone per il PDF!
-    """)
+    st.warning("⚠️ Esegui prima un'analisi completa")
 else:
-    st.success("✅ **Analisi completata!** Ora puoi generare il report PDF")
-    
-    if st.button("🖨️ Genera Report Completo (PDF)", type="primary", use_container_width=True, key="generate_pdf_btn"):
-        with st.spinner("📊 Generando report PDF..."):
+    st.success("✅ Analisi completata!")
+    if st.button("🖨️ Genera Report PDF", type="primary", use_container_width=True):
+        with st.spinner("Generando PDF..."):
             try:
                 pdf_buffer = create_pdf_report(
                     st.session_state.last_analysis_metrics,
@@ -1875,17 +1863,16 @@ else:
                     st.session_state.user_profile,
                     st.session_state.activities
                 )
-                st.success("✅ Report PDF generato con successo!")
                 st.download_button(
-                    label="📥 Scarica Report Completo (PDF)",
+                    "📥 Scarica PDF",
                     data=pdf_buffer,
-                    file_name=f"report_hrv_{st.session_state.user_profile['name']}_{st.session_state.last_analysis_start.strftime('%Y%m%d_%H%M')}.pdf",
+                    file_name=f"HRV_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                     mime="application/pdf",
-                    use_container_width=True,
-                    key="download_pdf_btn"
+                    use_container_width=True
                 )
             except Exception as e:
-                st.error(f"❌ Errore: {str(e)}")
+                st.error(f"Errore: {e}")
 
+# FOOTER
 st.markdown("---")
 st.markdown("**HRV Analytics ULTIMATE** - Sviluppato per Roberto")
