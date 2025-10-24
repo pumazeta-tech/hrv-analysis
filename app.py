@@ -1497,9 +1497,128 @@ with st.sidebar:
     analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True, key="analyze_btn")
 
 # MAIN CONTENT
+if analyze_btn:
+    if not st.session_state.user_profile['name'] or not st.session_state.user_profile['surname'] or not st.session_state.user_profile['birth_date']:
+        st.error("❌ **Completa il profilo utente prima di procedere con l'analisi**")
+        st.info("Inserisci nome, cognome e data di nascita nella sidebar")
+    else:
+        with st.spinner("🎯 **ANALISI COMPLETA IN CORSO**..."):
+            # Definisci metrics come variabile esterna ai blocchi
+            metrics = None
+            analysis_completed = False
+            
+            if uploaded_file is not None:
+                try:
+                    rr_intervals = read_ibi_file_fast(uploaded_file)
+                    
+                    if len(rr_intervals) == 0:
+                        st.error("❌ Nessun dato RR valido trovato nel file")
+                        st.stop()
+                    
+                    real_metrics = calculate_hrv_metrics_from_rr(rr_intervals)
+                    
+                    if real_metrics is None:
+                        st.error("❌ Impossibile calcolare le metriche HRV")
+                        st.stop()
+                    
+                    metrics = {
+                        'our_algo': {
+                            'sdnn': real_metrics['sdnn'],
+                            'rmssd': real_metrics['rmssd'],
+                            'hr_mean': real_metrics['hr_mean'],
+                            'hr_min': max(40, real_metrics['hr_mean'] - 15),
+                            'hr_max': min(180, real_metrics['hr_mean'] + 30),
+                            'actual_date': start_datetime,
+                            'recording_hours': selected_duration,
+                            'is_sleep_period': include_sleep,
+                            'health_profile_factor': health_factor,
+                            'coherence': max(20, 40 + (40 * health_factor)),
+                            'total_power': real_metrics['sdnn'] * 100,
+                            'vlf': real_metrics['sdnn'] * 20,
+                            'lf': real_metrics['sdnn'] * 50,
+                            'hf': real_metrics['rmssd'] * 80,
+                            'lf_hf_ratio': 1.5,
+                        }
+                    }
+                    
+                    if include_sleep and selected_duration >= 4:
+                        sleep_duration = min(8.0, selected_duration * 0.9)
+                        metrics['our_algo'].update({
+                            'sleep_duration': sleep_duration,
+                            'sleep_efficiency': min(95, 85 + np.random.normal(0, 5)),
+                            'sleep_coherence': 65 + np.random.normal(0, 3),
+                            'sleep_hr': 58 + np.random.normal(0, 2),
+                            'sleep_rem': min(2.0, sleep_duration * 0.25),
+                            'sleep_deep': min(1.5, sleep_duration * 0.2),
+                            'sleep_wakeups': max(0, int(sleep_duration * 0.5)),
+                        })
+                    
+                    metrics.update({
+                        'emwave_style': {
+                            'sdnn': real_metrics['sdnn'] * 0.7,
+                            'rmssd': real_metrics['rmssd'] * 0.7,
+                            'hr_mean': real_metrics['hr_mean'] + 2,
+                            'coherence': 50
+                        },
+                        'kubios_style': {
+                            'sdnn': real_metrics['sdnn'] * 1.3,
+                            'rmssd': real_metrics['rmssd'] * 1.3,
+                            'hr_mean': real_metrics['hr_mean'] - 2,
+                            'coherence': 70
+                        }
+                    })
+                    
+                    analysis_completed = True
+                    
                 except Exception as e:
                     st.error(f"❌ Errore nell'analisi del file: {e}")
                     st.stop()
+            else:
+                try:
+                    metrics = calculate_triple_metrics_corrected(
+                        selected_duration, 
+                        start_datetime, 
+                        health_profile_factor=health_factor,
+                        is_sleep_period=include_sleep
+                    )
+                    analysis_completed = True
+                    
+                except Exception as e:
+                    st.error(f"❌ Errore nell'analisi simulata: {e}")
+                    st.stop()
+            
+            # VERIFICA CHE L'ANALISI SIA COMPLETATA PRIMA DI PROCEDERE
+            if not analysis_completed or metrics is None:
+                st.error("❌ L'analisi non è stata completata correttamente")
+                st.stop()
+            
+            # APPLICA LE MODIFICHE PER GENERE/ETÀ
+            try:
+                adjusted_metrics = interpret_metrics_for_gender(
+                    metrics, 
+                    st.session_state.user_profile['gender'],
+                    st.session_state.user_profile['age']
+                )
+                
+                # MOSTRA IL DASHBOARD
+                create_complete_analysis_dashboard(
+                    adjusted_metrics, 
+                    start_datetime, 
+                    end_datetime,
+                    f"{selected_duration:.1f}h"
+                )
+                
+            except Exception as e:
+                st.error(f"❌ Errore nella visualizzazione dei risultati: {e}")
+                st.stop()
+            
+            # SALVA NEL DATABASE SOLO SE TUTTO È ANDATO BENE
+            try:
+                analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
+                if save_analysis_to_user_database(adjusted_metrics, start_datetime, end_datetime, f"{selected_duration:.1f}h", analysis_type):
+                    st.success("✅ Analisi salvata nello storico utente!")
+            except Exception as e:
+                st.error(f"❌ Errore nel salvataggio dello storico: {e}")
 else:
     st.info("👆 **Configura l'analisi dalla sidebar**")
     
