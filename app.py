@@ -160,64 +160,6 @@ def create_user_history_interface():
                         st.write(f"**RMSSD:** {analysis['metrics']['rmssd']:.1f} ms")
                         st.write(f"**Durata:** {analysis['selected_range']}")
 
-def show_user_analysis_history():
-    """Mostra lo storico completo delle analisi per l'utente corrente"""
-    analyses = get_user_analyses(st.session_state.user_profile)
-    
-    if analyses:
-        st.header("📊 Storico Analisi Utente")
-        
-        # Crea dataframe per la tabella
-        history_data = []
-        for analysis in sorted(analyses, key=lambda x: x['start_datetime'], reverse=True):
-            history_data.append({
-                'Data': analysis['start_datetime'].strftime('%d/%m/%Y %H:%M'),
-                'Tipo': analysis['analysis_type'],
-                'Durata': analysis['selected_range'],
-                'SDNN': f"{analysis['metrics']['sdnn']:.1f} ms",
-                'RMSSD': f"{analysis['metrics']['rmssd']:.1f} ms",
-                'HR': f"{analysis['metrics']['hr_mean']:.1f} bpm"
-            })
-        
-        if history_data:
-            df_history = pd.DataFrame(history_data)
-            st.dataframe(df_history, use_container_width=True, hide_index=True)
-            
-            # Grafico dell'andamento nel tempo
-            st.subheader("📈 Andamento SDNN e RMSSD nel tempo")
-            
-            fig_trend = go.Figure()
-            
-            # SDNN
-            fig_trend.add_trace(go.Scatter(
-                x=[a['start_datetime'] for a in analyses],
-                y=[a['metrics']['sdnn'] for a in analyses],
-                mode='lines+markers',
-                name='SDNN',
-                line=dict(color='#3498db', width=3),
-                marker=dict(size=8)
-            ))
-            
-            # RMSSD
-            fig_trend.add_trace(go.Scatter(
-                x=[a['start_datetime'] for a in analyses],
-                y=[a['metrics']['rmssd'] for a in analyses],
-                mode='lines+markers',
-                name='RMSSD',
-                line=dict(color='#e74c3c', width=3),
-                marker=dict(size=8)
-            ))
-            
-            fig_trend.update_layout(
-                title="Andamento Metriche HRV nel Tempo",
-                xaxis_title="Data Analisi",
-                yaxis_title="Valori (ms)",
-                height=400,
-                showlegend=True
-            )
-            
-            st.plotly_chart(fig_trend, use_container_width=True)
-
 # =============================================================================
 # FUNZIONI PER ESTRAZIONE DATA E ORA DAL FILE
 # =============================================================================
@@ -755,6 +697,10 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
 
 def create_simple_fallback_report(metrics, start_datetime, end_datetime, selected_range, user_profile):
     """Crea un report semplice come fallback"""
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    import io
+    
     buffer = io.BytesIO()
     p = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
@@ -1091,25 +1037,23 @@ def main():
             # Aggiorna data/ora automaticamente
             update_analysis_datetimes(uploaded_file, rr_intervals)
             
-            # Selezione range temporale
+            # Selezione range temporale - CORRETTO: uso date_input e time_input separati
             start_datetime, end_datetime = get_analysis_datetimes()
             
             st.header("⏰ Selezione Periodo Analisi")
             col1, col2 = st.columns(2)
             
             with col1:
-                new_start = st.datetime_input(
-                    "Data/Ora Inizio Analisi",
-                    value=start_datetime,
-                    key="start_dt_input"
-                )
+                st.subheader("Inizio Analisi")
+                start_date = st.date_input("Data Inizio", value=start_datetime.date(), key="start_date")
+                start_time = st.time_input("Ora Inizio", value=start_datetime.time(), key="start_time")
+                new_start = datetime.combine(start_date, start_time)
             
             with col2:
-                new_end = st.datetime_input(
-                    "Data/Ora Fine Analisi", 
-                    value=end_datetime,
-                    key="end_dt_input"
-                )
+                st.subheader("Fine Analisi")
+                end_date = st.date_input("Data Fine", value=end_datetime.date(), key="end_date")
+                end_time = st.time_input("Ora Fine", value=end_datetime.time(), key="end_time")
+                new_end = datetime.combine(end_date, end_time)
             
             if new_start != start_datetime or new_end != end_datetime:
                 st.session_state.analysis_datetimes = {
@@ -1196,7 +1140,7 @@ def main():
             
             with tab1:
                 fig_timeseries = create_hrv_timeseries_plot_with_real_time(
-                    metrics, st.session_state.activities, start_datetime, end_datetime
+                    metrics, [], start_datetime, end_datetime  # Passa lista vuota per activities
                 )
                 st.plotly_chart(fig_timeseries, use_container_width=True)
             
@@ -1205,7 +1149,15 @@ def main():
                 st.plotly_chart(fig_3d, use_container_width=True)
             
             with tab3:
-                show_user_analysis_history()
+                # Mostra analisi storica se disponibile
+                analyses = get_user_analyses(st.session_state.user_profile)
+                if analyses:
+                    st.subheader("📊 Storico Analisi")
+                    for analysis in analyses[-3:]:  # Ultime 3 analisi
+                        with st.expander(f"Analisi del {analysis['start_datetime'].strftime('%d/%m/%Y %H:%M')}"):
+                            st.write(f"SDNN: {analysis['metrics']['sdnn']:.1f} ms")
+                            st.write(f"RMSSD: {analysis['metrics']['rmssd']:.1f} ms")
+                            st.write(f"Durata: {analysis['selected_range']}")
             
             # Generazione report PDF
             st.header("📄 Genera Report Completo")
@@ -1214,7 +1166,7 @@ def main():
                 with st.spinner("Generando report PDF con grafiche avanzate..."):
                     pdf_buffer = create_advanced_pdf_report(
                         metrics, start_datetime, end_datetime, selected_range, 
-                        st.session_state.user_profile, st.session_state.activities
+                        st.session_state.user_profile, []
                     )
                     
                     st.success("✅ Report PDF generato con successo!")
