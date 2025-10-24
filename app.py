@@ -344,11 +344,11 @@ def create_hrv_timeseries_plot_with_real_time(metrics, activities, start_datetim
     return fig
 
 # =============================================================================
-# FUNZIONE PER CREARE PDF CON GRAFICHE AVANZATE
+# FUNZIONE PER CREARE PDF CON GRAFICHE AVANZATE - VERSIONE CORRETTA
 # =============================================================================
 
 def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[]):
-    """Crea un report PDF avanzato con grafiche 3D e analisi completa"""
+    """Crea un report PDF avanzato con grafiche 3D e analisi completa - VERSIONE CORRETTA"""
     try:
         # Import qui per evitare errori se reportlab non è installato
         from reportlab.pdfgen import canvas
@@ -358,7 +358,6 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
         from reportlab.lib.colors import Color, HexColor
         import io
         import matplotlib.pyplot as plt
-        from matplotlib.patches import FancyBboxPatch
         import numpy as np
         
         buffer = io.BytesIO()
@@ -417,11 +416,9 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
             if i % 2 == 0 and i > 0:
                 y_pos -= 80
             
-            # Box metriche
+            # Box metriche - CORRETTO: senza setAlpha
             p.setFillColor(color)
-            p.setAlpha(0.1)
             p.roundRect(x_pos, y_pos, 230, 60, 10, fill=1, stroke=0)
-            p.setAlpha(1)
             
             p.setFillColor(color)
             p.setFont("Helvetica-Bold", 12)
@@ -469,7 +466,10 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
             p.drawImage(ImageReader(img_buffer), 50, height-650, width=500, height=180)
             plt.close()
         except Exception as e:
-            st.warning(f"Grafico radar non generato: {e}")
+            # Se il grafico fallisce, aggiungi testo alternativo
+            p.setFillColor(text_color)
+            p.setFont("Helvetica", 10)
+            p.drawString(50, height-600, "Grafico radar non disponibile - dati tecnici temporaneamente non accessibili")
         
         p.showPage()
         
@@ -502,10 +502,9 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
             if i % 2 == 0 and i > 0:
                 y_pos -= 60
             
+            # Box spettrale - CORRETTO: senza trasparenza
             p.setFillColor(HexColor("#34495e"))
-            p.setAlpha(0.1)
             p.roundRect(x_pos, y_pos, 230, 45, 8, fill=1, stroke=0)
-            p.setAlpha(1)
             
             p.setFillColor(primary_color)
             p.setFont("Helvetica-Bold", 10)
@@ -524,10 +523,9 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
         y_weak = height-310
         
         for i, weakness in enumerate(weaknesses[:4]):  # Massimo 4 punti principali
+            # Box debolezze - CORRETTO
             p.setFillColor(HexColor("#e74c3c"))
-            p.setAlpha(0.1)
             p.roundRect(50, y_weak, 500, 25, 5, fill=1, stroke=0)
-            p.setAlpha(1)
             
             p.setFillColor(HexColor("#c0392b"))
             p.setFont("Helvetica-Bold", 9)
@@ -535,30 +533,26 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
             
             y_weak -= 30
         
-        # Grafico a barre 3D per distribuzione potenza
+        # Grafico a barre per distribuzione potenza (2D invece di 3D per semplicità)
         try:
-            fig = plt.figure(figsize=(8, 4))
-            ax = fig.add_subplot(111, projection='3d')
+            fig, ax = plt.subplots(figsize=(8, 4))
             
             bands = ['VLF', 'LF', 'HF']
             power_values = [metrics['our_algo']['vlf'], metrics['our_algo']['lf'], metrics['our_algo']['hf']]
             colors = ['#95a5a6', '#3498db', '#e74c3c']
             
-            xpos = [0, 1, 2]
-            ypos = [0, 0, 0]
-            zpos = [0, 0, 0]
-            dx = dy = [0.6] * 3
-            dz = [pv / 1000 for pv in power_values]  # Scala per visualizzazione
-            
-            ax.bar3d(xpos, ypos, zpos, dx, dy, dz, color=colors, alpha=0.8, 
-                    shade=True, edgecolor='black', linewidth=0.5)
+            bars = ax.bar(bands, power_values, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
             
             ax.set_xlabel('Bande Frequenza')
-            ax.set_ylabel('')
-            ax.set_zlabel('Potenza (ms²/1000)')
-            ax.set_xticks([0.3, 1.3, 2.3])
-            ax.set_xticklabels(bands)
-            ax.set_title('Distribuzione 3D Potenza HRV', pad=20)
+            ax.set_ylabel('Potenza (ms²)')
+            ax.set_title('Distribuzione Potenza HRV', pad=20)
+            ax.grid(True, alpha=0.3)
+            
+            # Aggiungi valori sulle barre
+            for bar in bars:
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height + 1,
+                       f'{height:.0f}', ha='center', va='bottom', fontsize=8)
             
             img_buffer = io.BytesIO()
             plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', 
@@ -568,7 +562,9 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
             p.drawImage(ImageReader(img_buffer), 50, height-500, width=500, height=180)
             plt.close()
         except Exception as e:
-            st.warning(f"Grafico 3D non generato: {e}")
+            p.setFillColor(text_color)
+            p.setFont("Helvetica", 10)
+            p.drawString(50, height-500, "Grafico distribuzione potenza non disponibile")
         
         p.showPage()
         
@@ -618,10 +614,9 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
         
         y_plan = height-380
         for timeframe, action in action_plan:
+            # Box piano d'azione - CORRETTO
             p.setFillColor(HexColor("#34495e"))
-            p.setAlpha(0.1)
             p.roundRect(50, y_plan, 500, 20, 5, fill=1, stroke=0)
-            p.setAlpha(1)
             
             p.setFillColor(primary_color)
             p.setFont("Helvetica-Bold", 9)
@@ -679,7 +674,9 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
             p.drawImage(ImageReader(img_buffer), 50, height-550, width=500, height=150)
             plt.close()
         except Exception as e:
-            st.warning(f"Grafico progresso non generato: {e}")
+            p.setFillColor(text_color)
+            p.setFont("Helvetica", 10)
+            p.drawString(50, height-550, "Grafico progresso non disponibile")
         
         # Referenze scientifiche
         p.setFillColor(HexColor("#7f8c8d"))
@@ -710,11 +707,11 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
         
     except Exception as e:
         st.error(f"Errore nella generazione PDF avanzato: {e}")
-        # Fallback - report semplice
-        return create_simple_fallback_report(metrics, start_datetime, end_datetime, selected_range, user_profile)
+        # Fallback - report semplice ma completo
+        return create_improved_fallback_report(metrics, start_datetime, end_datetime, selected_range, user_profile, weaknesses, recommendations)
 
-def create_simple_fallback_report(metrics, start_datetime, end_datetime, selected_range, user_profile):
-    """Crea un report semplice come fallback"""
+def create_improved_fallback_report(metrics, start_datetime, end_datetime, selected_range, user_profile, weaknesses, recommendations):
+    """Crea un report fallback migliorato con tutte le informazioni"""
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import A4
     import io
@@ -723,28 +720,132 @@ def create_simple_fallback_report(metrics, start_datetime, end_datetime, selecte
     p = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     
-    p.setFont("Helvetica-Bold", 16)
-    p.drawString(100, height-100, "REPORT HRV - ANALISI CARDIACA")
+    # Pagina 1
+    p.setFont("Helvetica-Bold", 18)
+    p.drawString(100, height-50, "REPORT HRV COMPLETO - ANALISI CARDIACA")
     p.setFont("Helvetica", 10)
-    p.drawString(100, height-120, f"Paziente: {user_profile.get('name', '')} {user_profile.get('surname', '')}")
-    p.drawString(100, height-140, f"Periodo: {start_datetime.strftime('%d/%m/%Y')} - {end_datetime.strftime('%d/%m/%Y')}")
+    p.drawString(100, height-70, f"Paziente: {user_profile.get('name', '')} {user_profile.get('surname', '')}")
+    p.drawString(100, height-85, f"Età: {user_profile.get('age', '')} anni | Sesso: {user_profile.get('gender', '')}")
+    p.drawString(100, height-100, f"Periodo: {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}")
+    p.drawString(100, height-115, f"Durata analisi: {selected_range}")
     
-    y_pos = height-180
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(100, y_pos, "Metriche Principali:")
-    y_pos -= 20
+    y_pos = height-150
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(100, y_pos, "METRICHE HRV PRINCIPALI:")
+    y_pos -= 25
     
     main_metrics = [
-        ("SDNN", f"{metrics['our_algo']['sdnn']:.1f} ms"),
-        ("RMSSD", f"{metrics['our_algo']['rmssd']:.1f} ms"),
-        ("Frequenza Cardiaca", f"{metrics['our_algo']['hr_mean']:.1f} bpm"),
-        ("Coerenza", f"{metrics['our_algo']['coherence']:.1f}%")
+        ("SDNN", f"{metrics['our_algo']['sdnn']:.1f} ms", get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))),
+        ("RMSSD", f"{metrics['our_algo']['rmssd']:.1f} ms", get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))),
+        ("Frequenza Cardiaca", f"{metrics['our_algo']['hr_mean']:.1f} bpm", get_hr_evaluation(metrics['our_algo']['hr_mean'])),
+        ("Coerenza", f"{metrics['our_algo']['coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['coherence'])),
+        ("Total Power", f"{metrics['our_algo']['total_power']:.0f} ms²", get_power_evaluation(metrics['our_algo']['total_power']))
     ]
     
-    for name, value in main_metrics:
+    for name, value, evaluation in main_metrics:
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(120, y_pos, f"{name}:")
         p.setFont("Helvetica", 10)
-        p.drawString(120, y_pos, f"{name}: {value}")
+        p.drawString(250, y_pos, value)
+        p.drawString(350, y_pos, evaluation)
+        y_pos -= 20
+    
+    y_pos -= 10
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(100, y_pos, "ANALISI SPETTRALE:")
+    y_pos -= 25
+    
+    spectral_metrics = [
+        ("VLF Power", f"{metrics['our_algo']['vlf']:.0f} ms²"),
+        ("LF Power", f"{metrics['our_algo']['lf']:.0f} ms²"),
+        ("HF Power", f"{metrics['our_algo']['hf']:.0f} ms²"),
+        ("LF/HF Ratio", f"{metrics['our_algo']['lf_hf_ratio']:.2f}", get_lf_hf_evaluation(metrics['our_algo']['lf_hf_ratio']))
+    ]
+    
+    for name, value, *evaluation in spectral_metrics:
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(120, y_pos, f"{name}:")
+        p.setFont("Helvetica", 10)
+        p.drawString(250, y_pos, value)
+        if evaluation:
+            p.drawString(350, y_pos, evaluation[0])
+        y_pos -= 20
+    
+    p.showPage()
+    
+    # Pagina 2 - Punti di debolezza e raccomandazioni
+    p.setFont("Helvetica-Bold", 18)
+    p.drawString(100, height-50, "ANALISI PUNTI DI ATTENZIONE E RACCOMANDAZIONI")
+    
+    y_pos = height-80
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(100, y_pos, "PUNTI DI DEBOLEZZA IDENTIFICATI:")
+    y_pos -= 25
+    
+    for weakness in weaknesses:
+        p.setFont("Helvetica", 10)
+        p.drawString(120, y_pos, f"• {weakness}")
         y_pos -= 15
+    
+    y_pos -= 20
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(100, y_pos, "RACCOMANDAZIONI PERSONALIZZATE:")
+    y_pos -= 25
+    
+    for category, recs in recommendations.items():
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(100, y_pos, f"{category}:")
+        y_pos -= 15
+        p.setFont("Helvetica", 10)
+        for rec in recs[:2]:  # Prime 2 raccomandazioni per categoria
+            p.drawString(120, y_pos, f"• {rec}")
+            y_pos -= 12
+        y_pos -= 10
+    
+    p.showPage()
+    
+    # Pagina 3 - Referenze scientifiche
+    p.setFont("Helvetica-Bold", 18)
+    p.drawString(100, height-50, "REFERENZE SCIENTIFICHE E CONCLUSIONI")
+    
+    y_pos = height-80
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(100, y_pos, "Bibliografia:")
+    y_pos -= 20
+    
+    references = [
+        "Task Force of ESC/NASPE (1996) - Heart rate variability: standards of measurement...",
+        "Malik et al. (1996) - Heart rate variability: Standards of measurement...",
+        "McCraty et al. (2009) - The coherent heart: Heart-brain interactions...",
+        "Shaffer et al. (2014) - An overview of heart rate variability metrics and norms",
+        "Nunan et al. (2010) - A quantitative systematic review of normal values for short-term HRV"
+    ]
+    
+    for ref in references:
+        p.setFont("Helvetica", 9)
+        p.drawString(120, y_pos, f"• {ref}")
+        y_pos -= 15
+    
+    y_pos -= 20
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(100, y_pos, "Conclusioni:")
+    y_pos -= 15
+    p.setFont("Helvetica", 10)
+    
+    # Conclusioni basate sul profilo
+    if len(weaknesses) <= 1:
+        conclusion = "Profilo HRV nella norma. Mantenere stile di vita sano e monitoraggio periodico."
+    elif len(weaknesses) <= 3:
+        conclusion = "Alcuni aspetti richiedono attenzione. Implementare le raccomandazioni fornite."
+    else:
+        conclusion = "Profilo che richiede miglioramenti significativi. Consigliato follow-up medico."
+    
+    p.drawString(100, y_pos, conclusion)
+    
+    # Footer
+    p.setFont("Helvetica", 8)
+    p.drawString(100, 30, "Report generato da HRV Analytics ULTIMATE")
+    p.drawString(100, 20, "Consultare sempre un medico per interpretazioni cliniche")
     
     p.showPage()
     p.save()
