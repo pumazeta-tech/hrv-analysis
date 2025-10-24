@@ -1414,8 +1414,8 @@ else:
     
     analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True, key="analyze_btn")
 
-# MAIN CONTENT
-if analyze_btn:
+# MAIN CONTENT - VERSIONE CORRETTA
+if st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True, key="analyze_btn"):
     if not st.session_state.user_profile['name'] or not st.session_state.user_profile['surname'] or not st.session_state.user_profile['birth_date']:
         st.error("❌ **Completa il profilo utente prima di procedere con l'analisi**")
         st.info("Inserisci nome, cognome e data di nascita nella sidebar")
@@ -1578,9 +1578,7 @@ else:
         - 📄 **Esportazione report** (PDF)
         - 📅 **Data/ora fine rilevazione** calcolata
         - ⏰ **Campi ore più grandi** nelle attività
-        """)
-
-# SEZIONE PDF
+        """)# SEZIONE PDF
 st.markdown("---")
 st.header("📄 Esporta Report Completo")
 
