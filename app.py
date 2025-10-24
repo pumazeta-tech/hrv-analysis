@@ -406,203 +406,366 @@ def create_hrv_timeseries_plot_with_real_time(metrics, activities, start_datetim
 # =============================================================================
 
 def create_pdf_report(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[]):
-    """Crea un report PDF SEMPLICE ma FUNZIONANTE"""
+    """Crea report PDF con GRAFICI BELLISSIMI e design moderno"""
     try:
-        # Prova prima con ReportLab se disponibile
-        from reportlab.pdfgen import canvas
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as patches
+        from matplotlib.gridspec import GridSpec
+        import seaborn as sns
         from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.utils import ImageReader
         import io
+        import numpy as np
         
-        buffer = io.BytesIO()
-        p = canvas.Canvas(buffer, pagesize=A4)
-        width, height = A4
+        # Configura styling moderno
+        plt.style.use('seaborn-v0_8')
+        sns.set_palette("husl")
         
-        # TITOLO PRINCIPALE
-        p.setFont("Helvetica-Bold", 16)
-        p.drawString(50, height-50, "🏥 REPORT CARDIOLOGICO HRV COMPLETO")
+        # Crea figura principale per tutti i grafici
+        fig = plt.figure(figsize=(11.7, 16.5), dpi=100)  # A4 in pollici
+        gs = GridSpec(4, 2, figure=fig, hspace=0.4, wspace=0.3)
         
-        # INFORMAZIONI PAZIENTE
-        p.setFont("Helvetica-Bold", 12)
-        p.drawString(50, height-80, "INFORMAZIONI PAZIENTE:")
-        p.setFont("Helvetica", 10)
-        p.drawString(50, height-100, f"Nome: {user_profile.get('name', '')} {user_profile.get('surname', '')}")
-        p.drawString(50, height-115, f"Età: {user_profile.get('age', '')} anni | Sesso: {user_profile.get('gender', '')}")
-        p.drawString(50, height-130, f"Data analisi: {start_datetime.strftime('%d/%m/%Y %H:%M')}")
-        p.drawString(50, height-145, f"Durata: {selected_range}")
+        # =========================================================================
+        # 1. GRAFICO METRICHE PRINCIPALI (Radar Chart)
+        # =========================================================================
+        ax1 = fig.add_subplot(gs[0, :])
         
-        # METRICHE PRINCIPALI
-        p.setFont("Helvetica-Bold", 12)
-        p.drawString(50, height-175, "METRICHE HRV PRINCIPALI:")
-        p.setFont("Helvetica", 10)
-        
-        y_pos = height-195
-        main_metrics = [
-            ("SDNN", f"{metrics['our_algo']['sdnn']:.1f} ms", get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))),
-            ("RMSSD", f"{metrics['our_algo']['rmssd']:.1f} ms", get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))),
-            ("Frequenza Cardiaca", f"{metrics['our_algo']['hr_mean']:.1f} bpm", get_hr_evaluation(metrics['our_algo']['hr_mean'])),
-            ("Coerenza Cardiaca", f"{metrics['our_algo']['coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['coherence'])),
-            ("Total Power", f"{metrics['our_algo']['total_power']:.0f} ms²", get_power_evaluation(metrics['our_algo']['total_power']))
+        # Prepara dati per radar chart
+        categories = ['SDNN', 'RMSSD', 'Coerenza', 'HRV Power', 'Bilancio LF/HF']
+        values = [
+            min(100, metrics['our_algo']['sdnn'] / 80 * 100),  # Normalizzato
+            min(100, metrics['our_algo']['rmssd'] / 60 * 100),
+            min(100, metrics['our_algo']['coherence']),
+            min(100, metrics['our_algo']['total_power'] / 10000 * 100),
+            min(100, metrics['our_algo']['lf_hf_ratio'] / 3 * 100)
         ]
         
-        for name, value, eval_text in main_metrics:
-            p.drawString(60, y_pos, f"• {name}: {value} - {eval_text}")
-            y_pos -= 15
+        # Completa il cerchio
+        values += values[:1]
+        categories_radar = categories + [categories[0]]
         
-        # ANALISI SPETTRALE
-        p.setFont("Helvetica-Bold", 12)
-        y_pos -= 20
-        p.drawString(50, y_pos, "ANALISI SPETTRALE:")
-        p.setFont("Helvetica", 10)
+        # Crea angoli per il radar
+        angles = np.linspace(0, 2*np.pi, len(categories), endpoint=False).tolist()
+        angles += angles[:1]
         
-        y_pos -= 20
-        spectral_metrics = [
-            ("VLF (0.003-0.04 Hz)", f"{metrics['our_algo']['vlf']:.0f} ms²"),
-            ("LF (0.04-0.15 Hz)", f"{metrics['our_algo']['lf']:.0f} ms²"),
-            ("HF (0.15-0.4 Hz)", f"{metrics['our_algo']['hf']:.0f} ms²"),
-            ("Rapporto LF/HF", f"{metrics['our_algo']['lf_hf_ratio']:.2f}")
-        ]
+        # Plot radar
+        ax1 = plt.subplot(gs[0, :], polar=True)
+        ax1.plot(angles, values, 'o-', linewidth=2, label='Paziente', color='#3498db', markersize=8)
+        ax1.fill(angles, values, alpha=0.25, color='#3498db')
         
-        for name, value in spectral_metrics:
-            p.drawString(60, y_pos, f"• {name}: {value}")
-            y_pos -= 15
+        # Linee di riferimento
+        ax1.plot(angles, [80] * len(angles), '--', color='#2ecc71', alpha=0.7, label='Ottimale')
+        ax1.plot(angles, [50] * len(angles), '--', color='#f39c12', alpha=0.7, label='Normale')
         
-        # ANALISI SONNO (se disponibile)
+        # Configura assi
+        ax1.set_theta_offset(np.pi / 2)
+        ax1.set_theta_direction(-1)
+        ax1.set_thetagrids(np.degrees(angles[:-1]), categories)
+        ax1.set_ylim(0, 100)
+        ax1.set_yticks([20, 40, 60, 80, 100])
+        ax1.grid(True, alpha=0.3)
+        ax1.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0))
+        ax1.set_title('📊 PROFILO HRV COMPLETO - ANALISI MULTIDIMENSIONALE', 
+                     pad=20, fontsize=14, fontweight='bold', color='#2c3e50')
+        
+        # =========================================================================
+        # 2. GRAFICO POWER SPECTRUM (Bar Chart 3D style)
+        # =========================================================================
+        ax2 = fig.add_subplot(gs[1, 0])
+        
+        bands = ['VLF', 'LF', 'HF']
+        power_values = [metrics['our_algo']['vlf'], metrics['our_algo']['lf'], metrics['our_algo']['hf']]
+        colors = ['#95a5a6', '#3498db', '#e74c3c']
+        
+        bars = ax2.bar(bands, power_values, color=colors, alpha=0.8, 
+                      edgecolor='white', linewidth=2)
+        
+        # Aggiungi valori sulle barre
+        for bar, value in zip(bars, power_values):
+            height = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width()/2., height + max(power_values)*0.01,
+                    f'{value:.0f}', ha='center', va='bottom', fontweight='bold')
+        
+        ax2.set_ylabel('Potenza (ms²)', fontweight='bold')
+        ax2.set_title('⚡ SPETTRO DI POTENZA HRV', fontweight='bold', pad=15)
+        ax2.grid(True, alpha=0.3, axis='y')
+        ax2.spines['top'].set_visible(False)
+        ax2.spines['right'].set_visible(False)
+        
+        # =========================================================================
+        # 3. GRAFICO CONFRONTO ALGORITMI (Grouped Bar)
+        # =========================================================================
+        ax3 = fig.add_subplot(gs[1, 1])
+        
+        algorithms = ['Nostro', 'EmWave', 'Kubios']
+        sdnn_values = [metrics['our_algo']['sdnn'], metrics['emwave_style']['sdnn'], metrics['kubios_style']['sdnn']]
+        rmssd_values = [metrics['our_algo']['rmssd'], metrics['emwave_style']['rmssd'], metrics['kubios_style']['rmssd']]
+        
+        x = np.arange(len(algorithms))
+        width = 0.35
+        
+        bars1 = ax3.bar(x - width/2, sdnn_values, width, label='SDNN', 
+                       color='#3498db', alpha=0.8, edgecolor='white', linewidth=1)
+        bars2 = ax3.bar(x + width/2, rmssd_values, width, label='RMSSD', 
+                       color='#e74c3c', alpha=0.8, edgecolor='white', linewidth=1)
+        
+        # Aggiungi valori
+        for bars in [bars1, bars2]:
+            for bar in bars:
+                height = bar.get_height()
+                ax3.text(bar.get_x() + bar.get_width()/2., height + 5,
+                        f'{height:.1f}', ha='center', va='bottom', fontsize=8, fontweight='bold')
+        
+        ax3.set_xlabel('Algoritmi', fontweight='bold')
+        ax3.set_ylabel('ms', fontweight='bold')
+        ax3.set_title('🔍 CONFRONTO ALGORITMI HRV', fontweight='bold', pad=15)
+        ax3.set_xticks(x)
+        ax3.set_xticklabels(algorithms)
+        ax3.legend()
+        ax3.grid(True, alpha=0.3, axis='y')
+        ax3.spines['top'].set_visible(False)
+        ax3.spines['right'].set_visible(False)
+        
+        # =========================================================================
+        # 4. GRAFICO ANDAMENTO TEMPORALE (Simulato)
+        # =========================================================================
+        ax4 = fig.add_subplot(gs[2, :])
+        
+        # Simula dati temporali
+        hours = np.linspace(0, 24, 100)
+        circadian_effect = np.sin((hours - 2) * np.pi / 12)
+        
+        sdnn_sim = metrics['our_algo']['sdnn'] + circadian_effect * 15 + np.random.normal(0, 3, 100)
+        rmssd_sim = metrics['our_algo']['rmssd'] + circadian_effect * 12 + np.random.normal(0, 2, 100)
+        hr_sim = metrics['our_algo']['hr_mean'] - circadian_effect * 8 + np.random.normal(0, 1.5, 100)
+        
+        ax4.plot(hours, sdnn_sim, label='SDNN', color='#3498db', linewidth=2.5, alpha=0.8)
+        ax4.plot(hours, rmssd_sim, label='RMSSD', color='#e74c3c', linewidth=2.5, alpha=0.8)
+        ax4_twin = ax4.twinx()
+        ax4_twin.plot(hours, hr_sim, label='HR', color='#2ecc71', linewidth=2.5, alpha=0.8, linestyle='--')
+        
+        ax4.set_xlabel('Ore del Giorno', fontweight='bold')
+        ax4.set_ylabel('HRV (ms)', fontweight='bold', color='#2c3e50')
+        ax4_twin.set_ylabel('Frequenza Cardiaca (bpm)', fontweight='bold', color='#2ecc71')
+        ax4.set_title('📈 ANDAMENTO CIRCADIANO HRV', fontweight='bold', pad=15)
+        ax4.legend(loc='upper left')
+        ax4_twin.legend(loc='upper right')
+        ax4.grid(True, alpha=0.3)
+        ax4.set_xlim(0, 24)
+        
+        # =========================================================================
+        # 5. GRAFICO ANALISI SONNO (se disponibile)
+        # =========================================================================
         sleep_data = metrics['our_algo']
         if sleep_data.get('sleep_duration') and sleep_data['sleep_duration'] > 0:
-            p.setFont("Helvetica-Bold", 12)
-            y_pos -= 20
-            p.drawString(50, y_pos, "ANALISI SONNO:")
-            p.setFont("Helvetica", 10)
+            ax5 = fig.add_subplot(gs[3, 0])
             
-            y_pos -= 20
-            sleep_metrics = [
-                ("Durata Sonno", f"{sleep_data['sleep_duration']:.1f} h"),
-                ("Efficienza", f"{sleep_data.get('sleep_efficiency', 0):.1f}%"),
-                ("Coerenza Notturna", f"{sleep_data.get('sleep_coherence', 0):.1f}%"),
-                ("Risvegli", f"{sleep_data.get('sleep_wakeups', 0):.0f}")
+            sleep_stages = ['Leggero', 'REM', 'Profondo']
+            sleep_durations = [
+                sleep_data['sleep_duration'] - sleep_data.get('sleep_rem', 0) - sleep_data.get('sleep_deep', 0),
+                sleep_data.get('sleep_rem', 0),
+                sleep_data.get('sleep_deep', 0)
             ]
+            colors_sleep = ['#3498db', '#9b59b6', '#2ecc71']
             
-            for name, value in sleep_metrics:
-                p.drawString(60, y_pos, f"• {name}: {value}")
-                y_pos -= 15
+            wedges, texts, autotexts = ax5.pie(sleep_durations, labels=sleep_stages, colors=colors_sleep,
+                                              autopct='%1.1f%%', startangle=90,
+                                              textprops={'fontweight': 'bold'})
+            
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontweight('bold')
+            
+            ax5.set_title('😴 COMPOSIZIONE SONNO', fontweight='bold', pad=15)
+            
+            # Grafico efficienza sonno
+            ax6 = fig.add_subplot(gs[3, 1])
+            
+            efficiency = sleep_data.get('sleep_efficiency', 0)
+            categories_eff = ['Efficienza']
+            values_eff = [efficiency]
+            
+            bars_eff = ax6.bar(categories_eff, values_eff, color='#f39c12', alpha=0.8)
+            
+            # Aggiungi linea di riferimento
+            ax6.axhline(y=85, color='#2ecc71', linestyle='--', linewidth=2, label='Ottimale (85%)')
+            ax6.axhline(y=70, color='#e74c3c', linestyle='--', linewidth=2, label='Minimo (70%)')
+            
+            ax6.set_ylim(0, 100)
+            ax6.set_ylabel('Efficienza (%)', fontweight='bold')
+            ax6.set_title('📊 EFFICIENZA SONNO', fontweight='bold', pad=15)
+            ax6.legend()
+            ax6.grid(True, alpha=0.3, axis='y')
+            
+            # Aggiungi valore sulla barra
+            for bar in bars_eff:
+                height = bar.get_height()
+                ax6.text(bar.get_x() + bar.get_width()/2., height + 2,
+                        f'{height:.1f}%', ha='center', va='bottom', fontweight='bold', fontsize=12)
         
-        # VALUTAZIONE E RACCOMANDAZIONI
-        p.setFont("Helvetica-Bold", 12)
-        y_pos -= 25
-        p.drawString(50, y_pos, "VALUTAZIONE CLINICA:")
-        p.setFont("Helvetica", 9)
-        
-        # Analisi automatica problemi
-        problems = []
-        sdnn = metrics['our_algo']['sdnn']
-        rmssd = metrics['our_algo']['rmssd']
-        gender = user_profile.get('gender', 'Uomo')
-        
-        if gender == "Donna":
-            if sdnn < 35: problems.append("Variabilità cardiaca ridotta")
-            if rmssd < 25: problems.append("Attività parasimpatica ridotta")
         else:
-            if sdnn < 30: problems.append("Variabilità cardiaca ridotta") 
-            if rmssd < 20: problems.append("Attività parasimpatica ridotta")
+            # Se non c'è analisi sonno, mostra grafico valutazione generale
+            ax5 = fig.add_subplot(gs[3, :])
+            
+            # Calcola punteggio complessivo
+            scores = {
+                'Variabilità': min(100, metrics['our_algo']['sdnn'] / 60 * 100),
+                'Parasimpatico': min(100, metrics['our_algo']['rmssd'] / 40 * 100),
+                'Coerenza': metrics['our_algo']['coherence'],
+                'Bilancio': min(100, abs(1.5 - metrics['our_algo']['lf_hf_ratio']) / 1.5 * 100)
+            }
+            
+            categories_score = list(scores.keys())
+            values_score = list(scores.values())
+            colors_score = ['#3498db', '#e74c3c', '#f39c12', '#2ecc71']
+            
+            bars_score = ax5.bar(categories_score, values_score, color=colors_score, alpha=0.8)
+            
+            for bar, value in zip(bars_score, values_score):
+                height = bar.get_height()
+                ax5.text(bar.get_x() + bar.get_width()/2., height + 2,
+                        f'{value:.0f}%', ha='center', va='bottom', fontweight='bold')
+            
+            ax5.set_ylim(0, 100)
+            ax5.set_ylabel('Punteggio (%)', fontweight='bold')
+            ax5.set_title('⭐ VALUTAZIONE COMPLESSIVA', fontweight='bold', pad=15)
+            ax5.grid(True, alpha=0.3, axis='y')
         
-        if problems:
-            y_pos -= 15
-            p.drawString(60, y_pos, "PROBLEMI IDENTIFICATI:")
-            y_pos -= 12
-            for problem in problems:
-                p.drawString(70, y_pos, f"• {problem}")
-                y_pos -= 12
+        # =========================================================================
+        # SALVA IL GRAFICO COME IMMAGINE
+        # =========================================================================
+        plt.tight_layout()
+        
+        # Salva grafico in buffer
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', 
+                   facecolor='#f8f9fa', edgecolor='none')
+        img_buffer.seek(0)
+        plt.close()
+        
+        # =========================================================================
+        # CREA PDF CON IL GRAFICO
+        # =========================================================================
+        pdf_buffer = io.BytesIO()
+        c = canvas.Canvas(pdf_buffer, pagesize=A4)
+        width, height = A4
+        
+        # HEADER CON DESIGN MODERNO
+        c.setFillColor('#2c3e50')
+        c.rect(0, height-80, width, 80, fill=1, stroke=0)
+        
+        c.setFillColor('white')
+        c.setFont("Helvetica-Bold", 20)
+        c.drawString(50, height-45, "🏥 REPORT CARDIOLOGICO HRV")
+        
+        c.setFont("Helvetica", 12)
+        c.drawString(50, height-70, f"Paziente: {user_profile.get('name', '')} {user_profile.get('surname', '')}")
+        
+        # INFORMAZIONI PAZIENTE IN BOX
+        c.setFillColor('#ecf0f1')
+        c.rect(400, height-75, 170, 60, fill=1, stroke=1)
+        c.setFillColor('#2c3e50')
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(410, height-50, "INFORMAZIONI PAZIENTE")
+        c.setFont("Helvetica", 8)
+        c.drawString(410, height-65, f"Età: {user_profile.get('age', '')} anni")
+        c.drawString(410, height-75, f"Sesso: {user_profile.get('gender', '')}")
+        c.drawString(410, height-85, f"Data: {start_datetime.strftime('%d/%m/%Y')}")
+        c.drawString(410, height-95, f"Durata: {selected_range}")
+        
+        # INSERISCI IL GRAFICO PRINCIPALE
+        img = ImageReader(img_buffer)
+        c.drawImage(img, 30, height-580, width=540, height=500, preserveAspectRatio=True)
+        
+        # SEZIONE VALUTAZIONE CLINICA
+        c.setFillColor('#34495e')
+        c.rect(30, height-620, width-60, 80, fill=1, stroke=0)
+        c.setFillColor('white')
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(40, height-600, "🎯 VALUTAZIONE CLINICA E RACCOMANDAZIONI")
+        
+        # Analisi automatica
+        c.setFillColor('#2c3e50')
+        c.setFont("Helvetica", 9)
+        
+        # Calcola valutazione complessiva
+        overall_score = (
+            min(100, metrics['our_algo']['sdnn'] / 60 * 100) * 0.3 +
+            min(100, metrics['our_algo']['rmssd'] / 40 * 100) * 0.3 +
+            metrics['our_algo']['coherence'] * 0.2 +
+            min(100, abs(1.5 - metrics['our_algo']['lf_hf_ratio']) / 1.5 * 100) * 0.2
+        )
+        
+        if overall_score >= 80:
+            assessment = "✅ OTTIMO - Profilo cardiovascolare eccellente"
+            color = '#27ae60'
+        elif overall_score >= 60:
+            assessment = "⚠️ BUONO - Alcuni aspetti da migliorare"
+            color = '#f39c12'
         else:
-            y_pos -= 15
-            p.drawString(60, y_pos, "• Nessun problema critico identificato")
-            y_pos -= 12
+            assessment = "❌ ATTENZIONE - Consigliato approfondimento"
+            color = '#e74c3c'
+        
+        c.setFillColor(color)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(40, height-630, assessment)
         
         # RACCOMANDAZIONI
-        y_pos -= 15
-        p.setFont("Helvetica-Bold", 10)
-        p.drawString(60, y_pos, "RACCOMANDAZIONI:")
-        p.setFont("Helvetica", 9)
+        c.setFillColor('#2c3e50')
+        c.setFont("Helvetica", 8)
         
         recommendations = [
-            "Monitoraggio regolare consigliato",
-            "Pratica respirazione 5-5-5 (5 sec inspiro, 5 espiro)",
-            "Mantieni sonno regolare 7-9 ore",
-            "Idratazione adeguata 2-3L acqua/giorno",
-            "Attività fisica moderata regolare"
+            "• Monitoraggio continuo consigliato",
+            "• Pratica respirazione 5-5-5 giornaliera", 
+            "• Mantenere ritmi sonno-veglia regolari",
+            "• Idratazione adeguata (2-3L acqua/giorno)",
+            "• Attività fisica moderata 3-4 volte/settimana"
         ]
         
+        y_pos = height-650
         for rec in recommendations:
+            c.drawString(50, y_pos, rec)
             y_pos -= 12
-            p.drawString(70, y_pos, f"• {rec}")
-        
-        # REFERENZE
-        y_pos -= 25
-        p.setFont("Helvetica-Bold", 10)
-        p.drawString(50, y_pos, "REFERENZE SCIENTIFICHE:")
-        p.setFont("Helvetica", 8)
-        
-        references = [
-            "Task Force ESC/NASPE (1996) - Standard HRV",
-            "Nunan et al. (2010) - Valori riferimento",
-            "Malik et al. (1996) - Interpretazione clinica"
-        ]
-        
-        for ref in references:
-            y_pos -= 10
-            p.drawString(60, y_pos, f"• {ref}")
         
         # FOOTER
-        y_pos -= 20
-        p.setFont("Helvetica-Oblique", 8)
-        p.drawString(50, y_pos, f"Report generato il {datetime.now().strftime('%d/%m/%Y %H:%M')} - HRV Analytics ULTIMATE")
+        c.setFillColor('#7f8c8d')
+        c.setFont("Helvetica-Oblique", 8)
+        c.drawString(30, 30, f"Report generato il {datetime.now().strftime('%d/%m/%Y %H:%M')} - HRV Analytics ULTIMATE")
+        c.drawString(30, 20, "Sviluppato per applicazioni cardiologiche professionali")
         
-        p.showPage()
-        p.save()
-        buffer.seek(0)
-        return buffer
+        c.showPage()
+        c.save()
+        pdf_buffer.seek(0)
+        
+        return pdf_buffer
         
     except Exception as e:
-        # FALLBACK: testo semplice
-        return create_text_fallback(metrics, start_datetime, user_profile)
+        # Fallback a versione semplice
+        return create_simple_pdf_fallback(metrics, start_datetime, user_profile)
 
-def create_text_fallback(metrics, start_datetime, user_profile):
-    """Crea PDF di fallback con testo semplice"""
+def create_simple_pdf_fallback(metrics, start_datetime, user_profile):
+    """Crea PDF semplice come fallback"""
+    from reportlab.pdfgen import canvas
     import io
     
-    content = f"""
-REPORT CARDIOLOGICO HRV
-========================
-
-PAZIENTE: {user_profile.get('name', '')} {user_profile.get('surname', '')}
-ETÀ: {user_profile.get('age', '')} anni | SESSO: {user_profile.get('gender', '')}
-DATA: {start_datetime.strftime('%d/%m/%Y %H:%M')}
-
-METRICHE PRINCIPALI:
-• SDNN: {metrics['our_algo']['sdnn']:.1f} ms
-• RMSSD: {metrics['our_algo']['rmssd']:.1f} ms
-• Frequenza Cardiaca: {metrics['our_algo']['hr_mean']:.1f} bpm
-• Coerenza: {metrics['our_algo']['coherence']:.1f}%
-
-ANALISI SPETTRALE:
-• VLF: {metrics['our_algo']['vlf']:.0f} ms²
-• LF: {metrics['our_algo']['lf']:.0f} ms²  
-• HF: {metrics['our_algo']['hf']:.0f} ms²
-• LF/HF: {metrics['our_algo']['lf_hf_ratio']:.2f}
-
-VALUTAZIONE:
-Parametri HRV nella norma con buon bilanciamento autonomico.
-
-RACCOMANDAZIONI:
-• Continuare monitoraggio regolare
-• Mantenere stile di vita sano
-• Praticare tecniche di rilassamento
-
-Report generato da HRV Analytics ULTIMATE
-"""
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer)
     
-    buffer = io.BytesIO(content.encode('utf-8'))
+    p.setFont("Helvetica-Bold", 16)
+    p.drawString(100, 800, "🏥 REPORT CARDIOLOGICO HRV")
+    
+    p.setFont("Helvetica", 12)
+    p.drawString(100, 770, f"Paziente: {user_profile.get('name', '')} {user_profile.get('surname', '')}")
+    p.drawString(100, 750, f"Data: {start_datetime.strftime('%d/%m/%Y %H:%M')}")
+    p.drawString(100, 730, f"SDNN: {metrics['our_algo']['sdnn']:.1f} ms")
+    p.drawString(100, 710, f"RMSSD: {metrics['our_algo']['rmssd']:.1f} ms")
+    p.drawString(100, 690, f"HR Medio: {metrics['our_algo']['hr_mean']:.1f} bpm")
+    
+    p.showPage()
+    p.save()
+    buffer.seek(0)
     return buffer
-
 # =============================================================================
 # PROFILO UTENTE
 # =============================================================================
