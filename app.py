@@ -1667,7 +1667,7 @@ with st.sidebar:
         key="include_sleep_checkbox"
     )
     
-    analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True, key="analyze_btn")
+analyze_btn = st.button("🚀 ANALISI COMPLETA", type="primary", use_container_width=True, key="analyze_btn")
 
 # MAIN CONTENT
 if analyze_btn:
@@ -1785,22 +1785,24 @@ if analyze_btn:
                 st.error(f"❌ Errore nella visualizzazione dei risultati: {e}")
                 st.stop()
             
-            # SALVA NEL DATABASE E PREPARA PER PDF - VERSIONE CORRETTA
+            # SALVA NEL DATABASE E PREPARA PER PDF
             try:
                 analysis_type = "File IBI" if uploaded_file is not None else "Simulata"
                 
-                # 🔥 SALVA I METRICS PER IL PDF - QUESTA È LA PARTE CRITICA
+                # Salva per il PDF
                 st.session_state.last_analysis_metrics = adjusted_metrics
                 st.session_state.last_analysis_start = start_datetime
                 st.session_state.last_analysis_end = end_datetime
                 st.session_state.last_analysis_duration = f"{selected_duration:.1f}h"
                 
-                # Salva anche nel database utente
+                # Salva nel database
                 if save_analysis_to_user_database(adjusted_metrics, start_datetime, end_datetime, f"{selected_duration:.1f}h", analysis_type):
                     st.success("✅ Analisi salvata nello storico utente!")
                     
             except Exception as e:
-                st.error(f"❌ Errore nel salvataggio: {e}")else:
+                st.error(f"❌ Errore nel salvataggio: {e}")
+
+else:
     st.info("👆 **Configura l'analisi dalla sidebar**")
     
     col1, col2 = st.columns(2)
@@ -1815,7 +1817,7 @@ if analyze_btn:
         5. **🌙 Attiva analisi sonno** (se notturno)
         6. **🚀 Avvia analisi** completa
         7. **📊 Consulta storico** analisi per utente
-        8. **📄 Esporta report** (PNG)
+        8. **📄 Esporta report** (PDF)
         """)
     
     with col2:
@@ -1828,24 +1830,23 @@ if analyze_btn:
         - 😴 **Analisi sonno** completa
         - 📅 **Storico analisi** per utente
         - 📈 **Andamento metriche** nel tempo
-        - 📄 **Esportazione report** (PNG)
+        - 📄 **Esportazione report** (PDF)
         - 📅 **Data/ora fine rilevazione** calcolata
         - ⏰ **Campi ore più grandi** nelle attività
         """)
 
-# 🔥 SEZIONE PDF - METTILA DOPO TUTTO IL BLOCCO analyze_btn, PRIMA DEL FOOTER
+# =============================================================================
+# SEZIONE ESPORTAZIONE PDF - LIVELLO PRINCIPALE
+# =============================================================================
 
 st.markdown("---")
 st.header("📄 Esporta Report Completo")
 
-# Verifica sicura se abbiamo un'analisi disponibile
-try:
-    has_analysis = (
-        'last_analysis_metrics' in st.session_state and 
-        st.session_state.last_analysis_metrics is not None
-    )
-except:
-    has_analysis = False
+# Verifica se abbiamo un'analisi disponibile
+has_analysis = (
+    'last_analysis_metrics' in st.session_state and 
+    st.session_state.last_analysis_metrics is not None
+)
 
 if not has_analysis:
     st.warning("⚠️ **Esegui prima un'analisi completa** per generare il report")
@@ -1886,10 +1887,6 @@ else:
             except Exception as e:
                 st.error(f"❌ Errore nella generazione del report: {str(e)}")
                 st.info("💡 Assicurati che ReportLab sia installato: `pip install reportlab`")
-
-# FOOTER (mantieni il footer esistente)
-st.markdown("---")
-st.markdown("**HRV Analytics ULTIMATE** - Sviluppato per Roberto")
 
 # FOOTER
 st.markdown("---")
