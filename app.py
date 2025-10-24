@@ -1418,59 +1418,86 @@ def create_complete_analysis_dashboard(metrics, start_datetime, end_datetime, se
     # 6. ANALISI SONNO (SOLO SE C'È)
     create_sleep_analysis(metrics)
     
-# 7. BOTTONE ESPORTA PDF FUNZIONANTE - VERSIONE CORRETTA
+# 7. BOTTONE ESPORTA PDF - VERSIONE SICURA E FUNZIONANTE
 st.markdown("---")
 st.header("📄 Esporta Report Completo")
 
-# DEBUG: Mostra cosa c'è nel session state
-st.sidebar.markdown("---")
-st.sidebar.subheader("🔍 DEBUG Session State")
-st.sidebar.write(f"last_analysis_metrics: {'presente' if 'last_analysis_metrics' in st.session_state else 'assente'}")
-if 'last_analysis_metrics' in st.session_state:
-    st.sidebar.write(f"Valore: {st.session_state.last_analysis_metrics is not None}")
-st.sidebar.write(f"file_uploaded: {st.session_state.file_uploaded}")
+# APPROCCIO SICURO: usa try/except per tutto
+try:
+    # Verifica in modo sicuro se abbiamo metrics disponibili
+    has_metrics = False
+    current_metrics = None
+    current_start = None
+    current_end = None
+    current_duration = None
+    
+    # Controlla prima le variabili locali (più affidabili)
+    try:
+        if 'adjusted_metrics' in locals() and adjusted_metrics is not None:
+            has_metrics = True
+            current_metrics = adjusted_metrics
+            current_start = start_datetime
+            current_end = end_datetime
+            current_duration = f"{selected_duration:.1f}h"
+    except:
+        pass
+    
+    # Se non in locali, controlla session state
+    if not has_metrics:
+        try:
+            if ('last_analysis_metrics' in st.session_state and 
+                st.session_state.last_analysis_metrics is not None):
+                has_metrics = True
+                current_metrics = st.session_state.last_analysis_metrics
+                current_start = st.session_state.get('last_analysis_start', datetime.now())
+                current_end = st.session_state.get('last_analysis_end', datetime.now() + timedelta(hours=1))
+                current_duration = st.session_state.get('last_analysis_duration', "1.0h")
+        except:
+            pass
+    
+    if not has_metrics:
+        st.warning("⚠️ **Esegui prima un'analisi completa** per generare il report")
+        st.info("""
+        💡 **Istruzioni:**
+        1. Compila il profilo utente nella sidebar
+        2. Carica un file IBI o usa dati simulati  
+        3. Clicca sul bottone **'🚀 ANALISI COMPLETA'**
+        4. Aspetta che l'analisi finisca
+        5. Il bottone PDF diventerà disponibile!
+        """)
+    else:
+        if st.button("🖨️ Genera Report Completo (PDF)", type="primary", use_container_width=True, key="generate_pdf_final"):
+            with st.spinner("📊 Generando report PDF..."):
+                try:
+                    pdf_buffer = create_pdf_report(
+                        current_metrics,
+                        current_start, 
+                        current_end, 
+                        current_duration,
+                        st.session_state.user_profile,
+                        st.session_state.activities
+                    )
+                    
+                    st.success("✅ Report PDF generato con successo!")
+                    
+                    st.download_button(
+                        label="📥 Scarica Report Completo (PDF)",
+                        data=pdf_buffer,
+                        file_name=f"report_hrv_{st.session_state.user_profile['name']}_{current_start.strftime('%Y%m%d_%H%M')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key="download_pdf_final"
+                    )
+                    
+                    st.info("📄 **Il report PDF include:** Metriche HRV, analisi spettrale, confronto algoritmi, valutazioni cliniche e referenze scientifiche")
+                    
+                except Exception as e:
+                    st.error(f"❌ Errore nella generazione del report: {str(e)}")
+                    st.info("💡 Prova a installare ReportLab: `pip install reportlab`")
 
-# Verifica se c'è un'analisi disponibile
-analysis_available = ('last_analysis_metrics' in st.session_state and 
-                     st.session_state.last_analysis_metrics is not None)
-
-st.write(f"🔍 DEBUG: analysis_available = {analysis_available}")
-
-if not analysis_available:
-    st.warning("⚠️ **Esegui prima un'analisi completa** per generare il report")
-    st.info("💡 Assicurati di: 1) Compilare il profilo utente, 2) Eseguire l'analisi con il bottone '🚀 ANALISI COMPLETA'")
-else:
-    # Usa una chiave univoca per evitare conflitti
-    if st.button("🖨️ Genera Report Completo (PDF)", type="primary", use_container_width=True, key="generate_pdf_report_final"):
-        with st.spinner("📊 Generando report PDF..."):
-            try:
-                # Usa i metrics salvati nello session state
-                pdf_buffer = create_pdf_report(
-                    st.session_state.last_analysis_metrics,
-                    st.session_state.last_analysis_start, 
-                    st.session_state.last_analysis_end, 
-                    st.session_state.last_analysis_duration,
-                    st.session_state.user_profile,
-                    st.session_state.activities
-                )
-                
-                st.success("✅ Report PDF generato con successo!")
-                
-                # Crea un download button con chiave univoca
-                st.download_button(
-                    label="📥 Scarica Report Completo (PDF)",
-                    data=pdf_buffer,
-                    file_name=f"report_hrv_{st.session_state.user_profile['name']}_{st.session_state.last_analysis_start.strftime('%Y%m%d_%H%M')}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                    key="download_pdf_report_final"
-                )
-                
-                st.info("📄 **Il report PDF include:** Metriche HRV, analisi spettrale, confronto algoritmi, valutazioni cliniche e referenze scientifiche")
-                
-            except Exception as e:
-                st.error(f"❌ Errore nella generazione del report PDF: {str(e)}")
-                st.info("💡 Assicurati che ReportLab sia installato: `pip install reportlab`")
+except Exception as e:
+    st.error("❌ Errore nel sistema di esportazione")
+    st.info("Esegui prima un'analisi completa per generare report")
     
     # 8. SALVA NEL DATABASE UTENTE - SOLO SE L'ANALISI È COMPLETATA
             # SALVA NEL DATABASE E NELLO SESSION STATE - VERSIONE MIGLIORATA
@@ -1758,14 +1785,22 @@ if analyze_btn:
                 st.error(f"❌ Errore nella visualizzazione dei risultati: {e}")
                 st.stop()
             
-            # SALVA NEL DATABASE SOLO SE TUTTO È ANDATO BENE
+            # SALVA NEL DATABASE E PREPARA PER PDF - VERSIONE CORRETTA
             try:
-                analysis_type = "File IBI" if st.session_state.file_uploaded else "Simulata"
+                analysis_type = "File IBI" if uploaded_file is not None else "Simulata"
+                
+                # 🔥 SALVA I METRICS PER IL PDF - QUESTA È LA PARTE CRITICA
+                st.session_state.last_analysis_metrics = adjusted_metrics
+                st.session_state.last_analysis_start = start_datetime
+                st.session_state.last_analysis_end = end_datetime
+                st.session_state.last_analysis_duration = f"{selected_duration:.1f}h"
+                
+                # Salva anche nel database utente
                 if save_analysis_to_user_database(adjusted_metrics, start_datetime, end_datetime, f"{selected_duration:.1f}h", analysis_type):
                     st.success("✅ Analisi salvata nello storico utente!")
+                    
             except Exception as e:
-                st.error(f"❌ Errore nel salvataggio dello storico: {e}")
-else:
+                st.error(f"❌ Errore nel salvataggio: {e}")else:
     st.info("👆 **Configura l'analisi dalla sidebar**")
     
     col1, col2 = st.columns(2)
@@ -1797,6 +1832,64 @@ else:
         - 📅 **Data/ora fine rilevazione** calcolata
         - ⏰ **Campi ore più grandi** nelle attività
         """)
+
+# 🔥 SEZIONE PDF - METTILA DOPO TUTTO IL BLOCCO analyze_btn, PRIMA DEL FOOTER
+
+st.markdown("---")
+st.header("📄 Esporta Report Completo")
+
+# Verifica sicura se abbiamo un'analisi disponibile
+try:
+    has_analysis = (
+        'last_analysis_metrics' in st.session_state and 
+        st.session_state.last_analysis_metrics is not None
+    )
+except:
+    has_analysis = False
+
+if not has_analysis:
+    st.warning("⚠️ **Esegui prima un'analisi completa** per generare il report")
+    st.info("""
+    💡 **Istruzioni:**
+    1. Compila il profilo utente nella sidebar
+    2. Carica un file IBI o usa dati simulati  
+    3. Clicca sul bottone **'🚀 ANALISI COMPLETA'**
+    4. Aspetta che l'analisi finisca
+    5. Questa sezione mostrerà il bottone per il PDF!
+    """)
+else:
+    st.success("✅ **Analisi completata!** Ora puoi generare il report PDF")
+    
+    if st.button("🖨️ Genera Report Completo (PDF)", type="primary", use_container_width=True, key="generate_pdf_btn"):
+        with st.spinner("📊 Generando report PDF..."):
+            try:
+                pdf_buffer = create_pdf_report(
+                    st.session_state.last_analysis_metrics,
+                    st.session_state.last_analysis_start,
+                    st.session_state.last_analysis_end,
+                    st.session_state.last_analysis_duration,
+                    st.session_state.user_profile,
+                    st.session_state.activities
+                )
+                
+                st.success("✅ Report PDF generato con successo!")
+                
+                st.download_button(
+                    label="📥 Scarica Report Completo (PDF)",
+                    data=pdf_buffer,
+                    file_name=f"report_hrv_{st.session_state.user_profile['name']}_{st.session_state.last_analysis_start.strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="download_pdf_btn"
+                )
+                
+            except Exception as e:
+                st.error(f"❌ Errore nella generazione del report: {str(e)}")
+                st.info("💡 Assicurati che ReportLab sia installato: `pip install reportlab`")
+
+# FOOTER (mantieni il footer esistente)
+st.markdown("---")
+st.markdown("**HRV Analytics ULTIMATE** - Sviluppato per Roberto")
 
 # FOOTER
 st.markdown("---")
