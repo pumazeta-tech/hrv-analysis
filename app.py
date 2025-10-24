@@ -348,95 +348,157 @@ def create_hrv_timeseries_plot_with_real_time(metrics, activities, start_datetim
 # =============================================================================
 
 def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[]):
-    """Crea un report PDF avanzato con grafiche 3D e analisi completa - VERSIONE CORRETTA"""
+    """Crea un report PDF avanzato con design moderno e analisi completa"""
     try:
-        # Import qui per evitare errori se reportlab non è installato
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.units import mm
         from reportlab.lib.utils import ImageReader
         from reportlab.lib.colors import Color, HexColor
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
         import io
         import matplotlib.pyplot as plt
         import numpy as np
         
         buffer = io.BytesIO()
-        p = canvas.Canvas(buffer, pagesize=A4)
-        width, height = A4
+        doc = SimpleDocTemplate(buffer, pagesize=A4, 
+                              topMargin=20*mm, bottomMargin=20*mm,
+                              leftMargin=15*mm, rightMargin=15*mm)
         
-        # Colori moderni
-        primary_color = HexColor("#3498db")
-        secondary_color = HexColor("#e74c3c")
-        accent_color = HexColor("#2ecc71")
-        background_color = HexColor("#f8f9fa")
-        text_color = HexColor("#2c3e50")
+        styles = getSampleStyleSheet()
+        story = []
         
-        # === PAGINA 1: INTESTAZIONE E METRICHE PRINCIPALI ===
+        # =============================================================================
+        # STILI PERSONALIZZATI
+        # =============================================================================
         
-        # Sfondo
-        p.setFillColor(background_color)
-        p.rect(0, 0, width, height, fill=1, stroke=0)
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=20,
+            textColor=HexColor("#2c3e50"),
+            spaceAfter=30,
+            alignment=TA_CENTER
+        )
         
-        # Header con gradiente
-        p.setFillColor(primary_color)
-        p.rect(0, height-80, width, 80, fill=1, stroke=0)
+        heading1_style = ParagraphStyle(
+            'Heading1',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=HexColor("#3498db"),
+            spaceAfter=12,
+            spaceBefore=20
+        )
         
-        # Titolo
-        p.setFillColorRGB(1, 1, 1)
-        p.setFont("Helvetica-Bold", 24)
-        p.drawString(50, height-50, "REPORT CARDIOLOGICO HRV")
-        p.setFont("Helvetica", 10)
-        p.drawString(50, height-70, f"Generato il: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+        heading2_style = ParagraphStyle(
+            'Heading2', 
+            parent=styles['Heading3'],
+            fontSize=12,
+            textColor=HexColor("#2c3e50"),
+            spaceAfter=8,
+            spaceBefore=15
+        )
         
-        # Informazioni paziente
-        p.setFillColor(text_color)
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(50, height-120, "INFORMAZIONI PAZIENTE")
-        p.setFont("Helvetica", 10)
-        p.drawString(50, height-140, f"Nome: {user_profile.get('name', '')} {user_profile.get('surname', '')}")
-        p.drawString(50, height-155, f"Età: {user_profile.get('age', '')} anni | Sesso: {user_profile.get('gender', '')}")
-        p.drawString(50, height-170, f"Periodo analisi: {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}")
-        p.drawString(50, height-185, f"Durata: {selected_range}")
+        normal_style = ParagraphStyle(
+            'Normal',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=HexColor("#34495e"),
+            spaceAfter=6
+        )
         
-        # Metriche principali in box moderni
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(50, height-220, "METRICHE HRV PRINCIPALI")
+        # =============================================================================
+        # PAGINA 1: INTESTAZIONE E PANORAMICA
+        # =============================================================================
         
-        y_pos = height-250
-        metrics_data = [
-            ("SDNN", f"{metrics['our_algo']['sdnn']:.1f} ms", get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo')), primary_color),
-            ("RMSSD", f"{metrics['our_algo']['rmssd']:.1f} ms", get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo')), secondary_color),
-            ("Frequenza Cardiaca", f"{metrics['our_algo']['hr_mean']:.1f} bpm", get_hr_evaluation(metrics['our_algo']['hr_mean']), accent_color),
-            ("Coerenza", f"{metrics['our_algo']['coherence']:.1f}%", get_coherence_evaluation(metrics['our_algo']['coherence']), HexColor("#f39c12")),
-            ("Total Power", f"{metrics['our_algo']['total_power']:.0f} ms²", get_power_evaluation(metrics['our_algo']['total_power']), HexColor("#9b59b6"))
+        # Titolo principale
+        story.append(Paragraph("REPORT HRV - VALUTAZIONE DEL SISTEMA NERVOSO AUTONOMO", title_style))
+        
+        # Informazioni utente
+        user_info = f"""
+        <b>Nome:</b> {user_profile.get('name', '')} {user_profile.get('surname', '')} &nbsp;&nbsp;&nbsp;
+        <b>Età:</b> {user_profile.get('age', '')} anni &nbsp;&nbsp;&nbsp;
+        <b>Sesso:</b> {user_profile.get('gender', '')}<br/>
+        <b>Periodo analisi:</b> {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}<br/>
+        <b>Durata registrazione:</b> {selected_range}
+        """
+        story.append(Paragraph(user_info, normal_style))
+        story.append(Spacer(1, 15))
+        
+        # METRICHE PRINCIPALI IN TABELLA
+        story.append(Paragraph("📊 PANORAMICA METRICHE PRINCIPALI", heading1_style))
+        
+        main_metrics_data = [
+            ['METRICA', 'VALORE', 'VALUTAZIONE'],
+            [
+                'SDNN (Variabilità Totale)', 
+                f"{metrics['our_algo']['sdnn']:.1f} ms", 
+                get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))
+            ],
+            [
+                'RMSSD (Attività Parasimpatica)', 
+                f"{metrics['our_algo']['rmssd']:.1f} ms", 
+                get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))
+            ],
+            [
+                'Frequenza Cardiaca Media', 
+                f"{metrics['our_algo']['hr_mean']:.1f} bpm", 
+                get_hr_evaluation(metrics['our_algo']['hr_mean'])
+            ],
+            [
+                'Coerenza Cardiaca', 
+                f"{metrics['our_algo']['coherence']:.1f}%", 
+                get_coherence_evaluation(metrics['our_algo']['coherence'])
+            ],
+            [
+                'Potenza Totale HRV', 
+                f"{metrics['our_algo']['total_power']:.0f} ms²", 
+                get_power_evaluation(metrics['our_algo']['total_power'])
+            ]
         ]
         
-        for i, (metric_name, value, evaluation, color) in enumerate(metrics_data):
-            x_pos = 50 + (i % 2) * 250
-            if i % 2 == 0 and i > 0:
-                y_pos -= 80
-            
-            # Box metriche - CORRETTO: senza setAlpha
-            p.setFillColor(color)
-            p.roundRect(x_pos, y_pos, 230, 60, 10, fill=1, stroke=0)
-            
-            p.setFillColor(color)
-            p.setFont("Helvetica-Bold", 12)
-            p.drawString(x_pos + 10, y_pos + 40, metric_name)
-            
-            p.setFillColor(text_color)
-            p.setFont("Helvetica", 10)
-            p.drawString(x_pos + 10, y_pos + 25, value)
-            
-            p.setFont("Helvetica-Bold", 9)
-            p.drawString(x_pos + 10, y_pos + 10, evaluation)
+        main_table = Table(main_metrics_data, colWidths=[180, 100, 120])
+        main_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor("#3498db")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), HexColor("#ffffff")),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), HexColor("#f8f9fa")),
+            ('GRID', (0, 0), (-1, -1), 1, HexColor("#bdc3c7")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
         
-        # Grafico radar compatto per pagina 1
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(50, height-450, "PROFILO HRV - ANALISI MULTIDIMENSIONALE")
+        story.append(main_table)
+        story.append(Spacer(1, 20))
         
-        # Creazione grafico radar semplificato
+        # VALUTAZIONE COMPLESSIVA
+        weaknesses = identify_weaknesses(metrics, user_profile)
+        
+        if len(weaknesses) <= 1:
+            overall_eval = "🟢 ECCELLENTE - Sistema nervoso autonomo ben bilanciato"
+            eval_color = "#27ae60"
+        elif len(weaknesses) <= 3:
+            overall_eval = "🟡 BUONO - Alcuni aspetti richiedono attenzione"
+            eval_color = "#f39c12"
+        else:
+            overall_eval = "🔴 DA MIGLIORARE - Significativo spazio di miglioramento"
+            eval_color = "#e74c3c"
+        
+        eval_text = f"""
+        <b>VALUTAZIONE COMPLESSIVA SISTEMA NERVOSO AUTONOMO</b><br/>
+        <font color="{eval_color}"><b>{overall_eval}</b></font>
+        """
+        story.append(Paragraph(eval_text, heading2_style))
+        story.append(Spacer(1, 15))
+        
+        # GRAFICO RADAR PER PROFILO MULTIDIMENSIONALE
         try:
+            story.append(Paragraph("🎯 PROFILO HRV - ANALISI MULTIDIMENSIONALE", heading1_style))
+            
             fig, ax = plt.subplots(figsize=(6, 4), subplot_kw=dict(projection='polar'))
             
             categories = ['SDNN', 'RMSSD', 'Coerenza', 'HRV Totale', 'Bilancio LF/HF']
@@ -458,256 +520,237 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
             ax.set_xticklabels(categories)
             ax.set_ylim(0, 100)
             ax.grid(True)
+            ax.set_facecolor('#f8f9fa')
             
             img_buffer = io.BytesIO()
-            plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', facecolor='#f8f9fa')
+            plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', 
+                       facecolor='#f8f9fa', edgecolor='none')
             img_buffer.seek(0)
             
-            p.drawImage(ImageReader(img_buffer), 50, height-650, width=500, height=180)
+            radar_img = Image(img_buffer, width=400, height=250)
+            story.append(radar_img)
+            story.append(Spacer(1, 15))
             plt.close()
         except Exception as e:
-            # Se il grafico fallisce, aggiungi testo alternativo
-            p.setFillColor(text_color)
-            p.setFont("Helvetica", 10)
-            p.drawString(50, height-600, "Grafico radar non disponibile - dati tecnici temporaneamente non accessibili")
+            story.append(Paragraph("<i>Grafico radar non disponibile</i>", normal_style))
         
-        p.showPage()
+        story.append(Spacer(1, 20))
         
-        # === PAGINA 2: ANALISI DETTAGLIATA E PUNTI DI DEBOLEZZA ===
+        # =============================================================================
+        # PAGINA 2: ANALISI DETTAGLIATA
+        # =============================================================================
         
-        # Sfondo
-        p.setFillColor(background_color)
-        p.rect(0, 0, width, height, fill=1, stroke=0)
+        story.append(Paragraph("🔍 ANALISI DETTAGLIATA E PUNTI DI ATTENZIONE", heading1_style))
         
-        # Titolo pagina
-        p.setFillColor(primary_color)
-        p.setFont("Helvetica-Bold", 18)
-        p.drawString(50, height-50, "ANALISI DETTAGLIATA E PUNTI DI ATTENZIONE")
-        
-        # Analisi spettrale
-        p.setFillColor(text_color)
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(50, height-100, "ANALISI SPETTRALE HRV")
+        # ANALISI SPETTRALE
+        story.append(Paragraph("📡 ANALISI SPETTRALE HRV", heading2_style))
         
         spectral_data = [
-            ("VLF Power", f"{metrics['our_algo']['vlf']:.0f} ms²", "Attività termoregolatorie"),
-            ("LF Power", f"{metrics['our_algo']['lf']:.0f} ms²", "Sistema simpatico"),
-            ("HF Power", f"{metrics['our_algo']['hf']:.0f} ms²", "Sistema parasimpatico"),
-            ("LF/HF Ratio", f"{metrics['our_algo']['lf_hf_ratio']:.2f}", "Bilancio autonomico")
+            ['BANDA FREQUENZA', 'POTENZA', 'SIGNIFICATO FUNZIONALE'],
+            [
+                'VLF (Very Low Frequency)', 
+                f"{metrics['our_algo']['vlf']:.0f} ms²", 
+                'Attività termoregolatorie e sistemi a lungo termine'
+            ],
+            [
+                'LF (Low Frequency)', 
+                f"{metrics['our_algo']['lf']:.0f} ms²", 
+                'Sistema simpatico e regolazione pressione'
+            ],
+            [
+                'HF (High Frequency)', 
+                f"{metrics['our_algo']['hf']:.0f} ms²", 
+                'Sistema parasimpatico e recupero'
+            ],
+            [
+                'RAPPORTO LF/HF', 
+                f"{metrics['our_algo']['lf_hf_ratio']:.2f}", 
+                f"{get_lf_hf_evaluation(metrics['our_algo']['lf_hf_ratio'])}"
+            ]
         ]
         
-        y_pos = height-130
-        for i, (name, value, desc) in enumerate(spectral_data):
-            x_pos = 50 + (i % 2) * 250
-            if i % 2 == 0 and i > 0:
-                y_pos -= 60
-            
-            # Box spettrale - CORRETTO: senza trasparenza
-            p.setFillColor(HexColor("#34495e"))
-            p.roundRect(x_pos, y_pos, 230, 45, 8, fill=1, stroke=0)
-            
-            p.setFillColor(primary_color)
-            p.setFont("Helvetica-Bold", 10)
-            p.drawString(x_pos + 10, y_pos + 30, name)
-            
-            p.setFillColor(text_color)
-            p.setFont("Helvetica", 9)
-            p.drawString(x_pos + 10, y_pos + 20, value)
-            p.drawString(x_pos + 10, y_pos + 10, desc)
+        spectral_table = Table(spectral_data, colWidths=[150, 80, 200])
+        spectral_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor("#2c3e50")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), HexColor("#ffffff")),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('BACKGROUND', (0, 1), (-1, -1), HexColor("#ecf0f1")),
+            ('GRID', (0, 0), (-1, -1), 1, HexColor("#bdc3c7")),
+        ]))
         
-        # Identificazione punti di debolezza
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(50, height-280, "🔍 PUNTI DI DEBOLEZZA IDENTIFICATI")
+        story.append(spectral_table)
+        story.append(Spacer(1, 20))
         
-        weaknesses = identify_weaknesses(metrics, user_profile)
-        y_weak = height-310
+        # PUNTI DI ATTENZIONE
+        story.append(Paragraph("⚠️ PUNTI DI ATTENZIONE IDENTIFICATI", heading2_style))
         
-        for i, weakness in enumerate(weaknesses[:4]):  # Massimo 4 punti principali
-            # Box debolezze - CORRETTO
-            p.setFillColor(HexColor("#e74c3c"))
-            p.roundRect(50, y_weak, 500, 25, 5, fill=1, stroke=0)
-            
-            p.setFillColor(HexColor("#c0392b"))
-            p.setFont("Helvetica-Bold", 9)
-            p.drawString(60, y_weak + 15, f"• {weakness}")
-            
-            y_weak -= 30
+        for i, weakness in enumerate(weaknesses[:4]):  # Massimo 4 punti
+            story.append(Paragraph(f"• {weakness}", normal_style))
         
-        # Grafico a barre per distribuzione potenza (2D invece di 3D per semplicità)
+        story.append(Spacer(1, 15))
+        
+        # GRAFICO DISTRIBUZIONE POTENZA
         try:
-            fig, ax = plt.subplots(figsize=(8, 4))
+            fig, ax = plt.subplots(figsize=(8, 3))
             
             bands = ['VLF', 'LF', 'HF']
             power_values = [metrics['our_algo']['vlf'], metrics['our_algo']['lf'], metrics['our_algo']['hf']]
             colors = ['#95a5a6', '#3498db', '#e74c3c']
             
-            bars = ax.bar(bands, power_values, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
+            bars = ax.bar(bands, power_values, color=colors, alpha=0.8, 
+                         edgecolor='white', linewidth=1.5)
             
             ax.set_xlabel('Bande Frequenza')
             ax.set_ylabel('Potenza (ms²)')
-            ax.set_title('Distribuzione Potenza HRV', pad=20)
-            ax.grid(True, alpha=0.3)
+            ax.set_title('Distribuzione Potenza HRV - Analisi Spettrale', pad=15, fontsize=11)
+            ax.grid(True, alpha=0.3, axis='y')
+            ax.set_facecolor('#f8f9fa')
             
             # Aggiungi valori sulle barre
             for bar in bars:
                 height = bar.get_height()
                 ax.text(bar.get_x() + bar.get_width()/2., height + 1,
-                       f'{height:.0f}', ha='center', va='bottom', fontsize=8)
+                       f'{height:.0f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
             
             img_buffer = io.BytesIO()
             plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', 
                        facecolor='#f8f9fa', edgecolor='none')
             img_buffer.seek(0)
             
-            p.drawImage(ImageReader(img_buffer), 50, height-500, width=500, height=180)
+            power_img = Image(img_buffer, width=400, height=180)
+            story.append(power_img)
             plt.close()
         except Exception as e:
-            p.setFillColor(text_color)
-            p.setFont("Helvetica", 10)
-            p.drawString(50, height-500, "Grafico distribuzione potenza non disponibile")
+            story.append(Paragraph("<i>Grafico distribuzione potenza non disponibile</i>", normal_style))
         
-        p.showPage()
+        story.append(Spacer(1, 15))
         
-        # === PAGINA 3: RACCOMANDAZIONI E PIANO D'AZIONE ===
+        # ANALISI SONNO (se disponibile)
+        if metrics['our_algo'].get('sleep_duration', 0) > 0:
+            story.append(Paragraph("😴 ANALISI QUALITÀ SONNO", heading2_style))
+            
+            sleep_data = [
+                ['METRICA', 'VALORE', 'VALUTAZIONE'],
+                ['Durata Sonno', f"{metrics['our_algo']['sleep_duration']:.1f} ore", 
+                 "✅ Ottima" if metrics['our_algo']['sleep_duration'] >= 7 else "⚠️ Da migliorare"],
+                ['Efficienza Sonno', f"{metrics['our_algo']['sleep_efficiency']:.0f}%", 
+                 "✅ Ottima" if metrics['our_algo']['sleep_efficiency'] >= 85 else "⚠️ Da migliorare"],
+                ['FC Notturna', f"{metrics['our_algo']['sleep_hr']:.0f} bpm", 
+                 "✅ Normale" if metrics['our_algo']['sleep_hr'] <= 65 else "⚠️ Elevata"]
+            ]
+            
+            sleep_table = Table(sleep_data, colWidths=[120, 80, 100])
+            sleep_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), HexColor("#9b59b6")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), HexColor("#ffffff")),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), HexColor("#f4ecf7")),
+                ('GRID', (0, 0), (-1, -1), 1, HexColor("#d7bde2")),
+            ]))
+            
+            story.append(sleep_table)
         
-        # Sfondo
-        p.setFillColor(background_color)
-        p.rect(0, 0, width, height, fill=1, stroke=0)
+        # =============================================================================
+        # PAGINA 3: RACCOMANDAZIONI E PIANO D'AZIONE
+        # =============================================================================
         
-        # Titolo pagina
-        p.setFillColor(accent_color)
-        p.setFont("Helvetica-Bold", 18)
-        p.drawString(50, height-50, "PIANO DI MIGLIORAMENTO E RACCOMANDAZIONI")
+        story.append(Paragraph("💡 PIANO DI MIGLIORAMENTO E RACCOMANDAZIONI", heading1_style))
         
-        # Raccomandazioni personalizzate
+        # RACCOMANDAZIONI PERSONALIZZATE
         recommendations = generate_recommendations(metrics, user_profile, weaknesses)
         
-        p.setFillColor(text_color)
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(50, height-90, "🎯 RACCOMANDAZIONI PERSONALIZZATE")
-        
-        y_rec = height-120
-        for i, (category, rec_list) in enumerate(recommendations.items()):
-            p.setFillColor(primary_color)
-            p.setFont("Helvetica-Bold", 12)
-            p.drawString(50, y_rec, f"{category}:")
-            y_rec -= 20
+        for category, rec_list in recommendations.items():
+            story.append(Paragraph(f"<b>🎯 {category.upper()}</b>", heading2_style))
             
-            p.setFillColor(text_color)
-            p.setFont("Helvetica", 9)
-            for rec in rec_list[:3]:  # Massimo 3 raccomandazioni per categoria
-                p.drawString(70, y_rec, f"• {rec}")
-                y_rec -= 15
-            y_rec -= 10
+            for rec in rec_list[:3]:  # Prime 3 raccomandazioni per categoria
+                story.append(Paragraph(f"• {rec}", normal_style))
+            
+            story.append(Spacer(1, 8))
         
-        # Piano d'azione temporale
-        p.setFillColor(secondary_color)
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(50, height-350, "📅 PIANO D'AZIONE 30 GIORNI")
+        story.append(Spacer(1, 15))
+        
+        # PIANO D'AZIONE 30 GIORNI
+        story.append(Paragraph("📅 PIANO D'AZIONE - PROSSIMI 30 GIORNI", heading2_style))
         
         action_plan = [
-            ("Settimana 1-2", "Focus su respirazione e routine sonno"),
-            ("Settimana 3-4", "Implementazione attività fisica leggera"),
-            ("Giornaliero", "Monitoraggio coerenza cardiaca 5 minuti"),
-            ("Settimanale", "Sessioni di rilassamento guidato")
+            ['SETTIMANA', 'OBIETTIVI PRINCIPALI', 'AZIONI SPECIFICHE'],
+            [
+                '1-2', 
+                'Stabilire routine base', 
+                '• Respirazione 5 min 2x giorno<br/>• Orari sonno regolari<br/>• Idratazione 2L acqua'
+            ],
+            [
+                '3-4', 
+                'Consolidare abitudini', 
+                '• Aggiungere attività fisica leggera<br/>• Tecniche rilassamento serale<br/>• Monitoraggio coerenza'
+            ]
         ]
         
-        y_plan = height-380
-        for timeframe, action in action_plan:
-            # Box piano d'azione - CORRETTO
-            p.setFillColor(HexColor("#34495e"))
-            p.roundRect(50, y_plan, 500, 20, 5, fill=1, stroke=0)
-            
-            p.setFillColor(primary_color)
-            p.setFont("Helvetica-Bold", 9)
-            p.drawString(60, y_plan + 12, timeframe)
-            
-            p.setFillColor(text_color)
-            p.setFont("Helvetica", 9)
-            p.drawString(200, y_plan + 12, action)
-            
-            y_plan -= 25
+        action_table = Table(action_plan, colWidths=[60, 120, 200])
+        action_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor("#e67e22")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), HexColor("#ffffff")),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 1), (-1, -1), HexColor("#fef9e7")),
+            ('GRID', (0, 0), (-1, -1), 1, HexColor("#f8c471")),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
         
-        # Grafico progresso atteso
-        try:
-            fig, ax = plt.subplots(figsize=(8, 3))
-            
-            weeks = ['Attuale', 'Sett 2', 'Sett 4']
-            sdnn_progress = [
-                metrics['our_algo']['sdnn'],
-                metrics['our_algo']['sdnn'] * 1.15,
-                metrics['our_algo']['sdnn'] * 1.3
-            ]
-            rmssd_progress = [
-                metrics['our_algo']['rmssd'],
-                metrics['our_algo']['rmssd'] * 1.2,
-                metrics['our_algo']['rmssd'] * 1.4
-            ]
-            
-            x = range(len(weeks))
-            width = 0.35
-            
-            bars1 = ax.bar([i - width/2 for i in x], sdnn_progress, width, 
-                          label='SDNN', color='#3498db', alpha=0.8, edgecolor='black', linewidth=0.5)
-            bars2 = ax.bar([i + width/2 for i in x], rmssd_progress, width, 
-                          label='RMSSD', color='#e74c3c', alpha=0.8, edgecolor='black', linewidth=0.5)
-            
-            ax.set_xlabel('Timeline')
-            ax.set_ylabel('Valori (ms)')
-            ax.set_title('Progresso Atteso con Interventi', pad=10)
-            ax.set_xticks(x)
-            ax.set_xticklabels(weeks)
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-            
-            # Aggiungi valore sulle barre
-            for bar in bars1 + bars2:
-                height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height + 1,
-                       f'{height:.0f}', ha='center', va='bottom', fontsize=8)
-            
-            img_buffer = io.BytesIO()
-            plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', 
-                       facecolor='#f8f9fa', edgecolor='none')
-            img_buffer.seek(0)
-            
-            p.drawImage(ImageReader(img_buffer), 50, height-550, width=500, height=150)
-            plt.close()
-        except Exception as e:
-            p.setFillColor(text_color)
-            p.setFont("Helvetica", 10)
-            p.drawString(50, height-550, "Grafico progresso non disponibile")
+        story.append(action_table)
+        story.append(Spacer(1, 20))
         
-        # Referenze scientifiche
-        p.setFillColor(HexColor("#7f8c8d"))
-        p.setFont("Helvetica-Bold", 10)
-        p.drawString(50, 80, "REFERENZE SCIENTIFICHE:")
-        p.setFont("Helvetica", 8)
+        # OBIETTIVI BREVE TERMINE
+        story.append(Paragraph("🎯 OBIETTIVI BREVE TERMINE (4 settimane)", heading2_style))
+        
+        objectives = [
+            f"• Aumentare coerenza cardiaca media a >60%",
+            f"• Migliorare bilanciamento autonomico (LF/HF tra 0.5-2.0)",
+            f"• Ridurre frequenza cardiaca a riposo sotto {max(60, metrics['our_algo']['hr_mean'] - 5):.0f} bpm",
+            f"• Incrementare variabilità generale del 15-20%"
+        ]
+        
+        for obj in objectives:
+            story.append(Paragraph(obj, normal_style))
+        
+        story.append(Spacer(1, 20))
+        
+        # REFERENZE SCIENTIFICHE
+        story.append(Paragraph("📚 BIBLIOGRAFIA E REFERENZE", heading2_style))
+        
         references = [
-            "• Task Force of ESC/NASPE (1996) - Heart rate variability",
-            "• Malik et al. (1996) - HRV standards of measurement",
-            "• McCraty et al. (2009) - Coherence and HRV",
-            "• Shaffer et al. (2014) - Clinical applications of HRV"
+            "• Task Force of ESC/NASPE (1996) - Heart rate variability: Standards of measurement...",
+            "• Malik et al. (1996) - Heart rate variability: Standards of measurement...", 
+            "• McCraty et al. (2009) - The coherent heart: Heart-brain interactions...",
+            "• Shaffer et al. (2014) - An overview of heart rate variability metrics and norms"
         ]
-        y_ref = 60
+        
         for ref in references:
-            p.drawString(60, y_ref, ref)
-            y_ref -= 12
+            story.append(Paragraph(ref, normal_style))
         
-        # Footer
-        p.setFillColor(HexColor("#7f8c8d"))
-        p.setFont("Helvetica", 8)
-        p.drawString(50, 30, "Report generato da HRV Analytics ULTIMATE - Sistema avanzato di analisi della variabilità cardiaca")
-        p.drawString(50, 20, "Consultare sempre un medico per interpretazioni cliniche")
+        # FOOTER
+        story.append(Spacer(1, 20))
+        footer_text = f"""
+        <i>Report generato il {datetime.now().strftime('%d/%m/%Y alle %H:%M')} - 
+        HRV Analytics ULTIMATE - Sistema avanzato di analisi della variabilità cardiaca<br/>
+        Per scopi informativi e di benessere - Consultare professionisti sanitari per interpretazioni cliniche</i>
+        """
+        story.append(Paragraph(footer_text, normal_style))
         
-        p.showPage()
-        p.save()
+        # GENERA IL PDF
+        doc.build(story)
         buffer.seek(0)
         return buffer
         
     except Exception as e:
         st.error(f"Errore nella generazione PDF avanzato: {e}")
-        # Fallback - report semplice ma completo
+        # Fallback a report semplice
         return create_improved_fallback_report(metrics, start_datetime, end_datetime, selected_range, user_profile, weaknesses, recommendations)
 
 def create_improved_fallback_report(metrics, start_datetime, end_datetime, selected_range, user_profile, weaknesses, recommendations):
