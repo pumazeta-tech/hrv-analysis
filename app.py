@@ -409,163 +409,274 @@ def create_hrv_timeseries_plot_with_real_time(metrics, activities, start_datetim
 # =============================================================================
 
 def create_pdf_report(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[]):
-    """Crea un report PDF migliorato con referenze scientifiche"""
-    
-    # Crea figura più grande per contenere tutto
-    fig, axes = plt.subplots(3, 2, figsize=(16, 18))
-    fig.suptitle(f'REPORT CARDIOLOGICO COMPLETO - {start_datetime.strftime("%d/%m/%Y %H:%M")}\n'
-                f'Paziente: {user_profile.get("name", "")} {user_profile.get("surname", "")} - '
-                f'{user_profile.get("age", "")} anni - {user_profile.get("gender", "")}', 
-                fontsize=14, fontweight='bold')
-    
-    # 1. METRICHE PRINCIPALI
-    ax1 = axes[0, 0]
-    metrics_data = [
-        ('SDNN', metrics['our_algo']['sdnn'], 'ms', '#3498db'),
-        ('RMSSD', metrics['our_algo']['rmssd'], 'ms', '#e74c3c'),
-        ('HR Medio', metrics['our_algo']['hr_mean'], 'bpm', '#2ecc71'),
-        ('Coerenza', metrics['our_algo']['coherence'], '%', '#f39c12')
-    ]
-    
-    names = [m[0] for m in metrics_data]
-    values = [m[1] for m in metrics_data]
-    colors = [m[3] for m in metrics_data]
-    
-    bars = ax1.bar(names, values, color=colors)
-    ax1.set_title('METRICHE HRV PRINCIPALI', fontweight='bold')
-    ax1.set_ylabel('Valori')
-    
-    # Aggiungi valutazioni
-    sdnn_eval = get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))
-    rmssd_eval = get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))
-    
-    for i, (bar, value) in enumerate(zip(bars, values)):
-        ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(values)*0.01, 
-                f'{value:.1f}', ha='center', va='bottom', fontweight='bold')
-    
-    # 2. POWER SPECTRUM
-    ax2 = axes[0, 1]
-    bands = ['VLF', 'LF', 'HF']
-    power_values = [metrics['our_algo']['vlf'], metrics['our_algo']['lf'], metrics['our_algo']['hf']]
-    colors = ['#95a5a6', '#3498db', '#e74c3c']
-    
-    bars2 = ax2.bar(bands, power_values, color=colors)
-    ax2.set_title('SPETTRO DI POTENZA HRV', fontweight='bold')
-    ax2.set_ylabel('Potenza (ms²)')
-    
-    for bar, value in zip(bars2, power_values):
-        ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(power_values)*0.01, 
-                f'{value:.0f}', ha='center', va='bottom', fontweight='bold')
-    
-    # 3. CONFRONTO ALGORITMI
-    ax3 = axes[1, 0]
-    algorithms = ['Nostro', 'EmWave', 'Kubios']
-    sdnn_values = [metrics['our_algo']['sdnn'], metrics['emwave_style']['sdnn'], metrics['kubios_style']['sdnn']]
-    rmssd_values = [metrics['our_algo']['rmssd'], metrics['emwave_style']['rmssd'], metrics['kubios_style']['rmssd']]
-    
-    x = np.arange(len(algorithms))
-    width = 0.35
-    
-    bars3a = ax3.bar(x - width/2, sdnn_values, width, label='SDNN', color='#3498db')
-    bars3b = ax3.bar(x + width/2, rmssd_values, width, label='RMSSD', color='#e74c3c')
-    
-    ax3.set_title('CONFRONTO ALGORITMI HRV', fontweight='bold')
-    ax3.set_ylabel('ms')
-    ax3.set_xticks(x)
-    ax3.set_xticklabels(algorithms)
-    ax3.legend()
-    
-    # 4. INFORMAZIONI PAZIENTE E VALUTAZIONE
-    ax4 = axes[1, 1]
-    ax4.axis('off')
-    
-    # Analisi sonno se disponibile
-    sleep_info = ""
-    sleep_data = metrics['our_algo']
-    if sleep_data.get('sleep_duration') and sleep_data['sleep_duration'] > 0:
-        sleep_info = f"""
-ANALISI SONNO:
-• Durata: {sleep_data['sleep_duration']:.1f} h
-• Efficienza: {sleep_data.get('sleep_efficiency', 0):.1f}%
-• Coerenza Notturna: {sleep_data.get('sleep_coherence', 0):.1f}%
-• Risvegli: {sleep_data.get('sleep_wakeups', 0):.0f}
-• Sonno REM: {sleep_data.get('sleep_rem', 0):.1f} h
-• Sonno Profondo: {sleep_data.get('sleep_deep', 0):.1f} h
+    """Crea un vero report PDF con referenze scientifiche"""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+        from reportlab.lib.units import inch
+        from reportlab.lib import colors
+        from reportlab.graphics.shapes import Drawing
+        from reportlab.graphics.charts.barcharts import VerticalBarChart
+        import io
+        
+        # Crea buffer per il PDF
+        buffer = io.BytesIO()
+        
+        # Crea il documento PDF
+        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Titolo principale
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            spaceAfter=30,
+            alignment=1,  # Centered
+            textColor=colors.HexColor('#2c3e50')
+        )
+        
+        title_text = f"REPORT CARDIOLOGICO COMPLETO<br/>"
+        title_text += f"<font size=12>{start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}</font>"
+        story.append(Paragraph(title_text, title_style))
+        
+        # Informazioni paziente
+        patient_style = ParagraphStyle(
+            'PatientInfo',
+            parent=styles['Normal'],
+            fontSize=10,
+            spaceAfter=12,
+            textColor=colors.HexColor('#34495e')
+        )
+        
+        patient_info = f"""
+        <b>PAZIENTE:</b> {user_profile.get('name', '')} {user_profile.get('surname', '')} | 
+        <b>ETÀ:</b> {user_profile.get('age', '')} anni | 
+        <b>SESSO:</b> {user_profile.get('gender', '')} |
+        <b>DURATA ANALISI:</b> {selected_range}
         """
+        story.append(Paragraph(patient_info, patient_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # 1. METRICHE PRINCIPALI
+        story.append(Paragraph("<b>📊 METRICHE HRV PRINCIPALI</b>", styles['Heading2']))
+        
+        # Tabella metriche principali
+        metrics_data = [
+            ['PARAMETRO', 'VALORE', 'VALUTAZIONE'],
+            ['SDNN', f"{metrics['our_algo']['sdnn']:.1f} ms", 
+             get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))],
+            ['RMSSD', f"{metrics['our_algo']['rmssd']:.1f} ms", 
+             get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))],
+            ['Frequenza Cardiaca', f"{metrics['our_algo']['hr_mean']:.1f} bpm", 
+             get_hr_evaluation(metrics['our_algo']['hr_mean'])],
+            ['Coerenza Cardiaca', f"{metrics['our_algo']['coherence']:.1f}%", 
+             get_coherence_evaluation(metrics['our_algo']['coherence'])],
+            ['Total Power', f"{metrics['our_algo']['total_power']:.0f} ms²", 
+             get_power_evaluation(metrics['our_algo']['total_power'])]
+        ]
+        
+        metrics_table = Table(metrics_data, colWidths=[2*inch, 1.5*inch, 2*inch])
+        metrics_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ecf0f1')),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7'))
+        ]))
+        story.append(metrics_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # 2. POWER SPECTRUM
+        story.append(Paragraph("<b>⚡ ANALISI SPETTRALE HRV</b>", styles['Heading2']))
+        
+        power_data = [
+            ['BANDA FREQUENZA', 'POTENZA (ms²)', 'INTERPRETAZIONE'],
+            ['VLF (0.003-0.04 Hz)', f"{metrics['our_algo']['vlf']:.0f}", 'Termoregolazione'],
+            ['LF (0.04-0.15 Hz)', f"{metrics['our_algo']['lf']:.0f}", 'Simpatica/Parasimpatica'],
+            ['HF (0.15-0.4 Hz)', f"{metrics['our_algo']['hf']:.0f}", 'Attività Parasimpatica'],
+            ['LF/HF Ratio', f"{metrics['our_algo']['lf_hf_ratio']:.2f}", 
+             'Ottimale' if 0.5 <= metrics['our_algo']['lf_hf_ratio'] <= 2.0 else 'Da monitorare']
+        ]
+        
+        power_table = Table(power_data, colWidths=[2*inch, 1.5*inch, 2*inch])
+        power_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ebf5fb')),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#aed6f1'))
+        ]))
+        story.append(power_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # 3. ANALISI SONNO (se disponibile)
+        sleep_data = metrics['our_algo']
+        if sleep_data.get('sleep_duration') and sleep_data['sleep_duration'] > 0:
+            story.append(Paragraph("<b>😴 ANALISI QUALITÀ DEL SONNO</b>", styles['Heading2']))
+            
+            sleep_metrics = [
+                ['PARAMETRO SONNO', 'VALORE', 'VALUTAZIONE'],
+                ['Durata Sonno', f"{sleep_data['sleep_duration']:.1f} h", 
+                 'Ottimale' if sleep_data['sleep_duration'] >= 7 else 'Sufficiente'],
+                ['Efficienza Sonno', f"{sleep_data.get('sleep_efficiency', 0):.1f}%", 
+                 'Eccellente' if sleep_data.get('sleep_efficiency', 0) > 85 else 'Buona'],
+                ['Coerenza Notturna', f"{sleep_data.get('sleep_coherence', 0):.1f}%", 
+                 get_coherence_evaluation(sleep_data.get('sleep_coherence', 0))],
+                ['Risvegli', f"{sleep_data.get('sleep_wakeups', 0):.0f}", 
+                 'Ottimo' if sleep_data.get('sleep_wakeups', 0) <= 3 else 'Normale'],
+                ['Sonno REM', f"{sleep_data.get('sleep_rem', 0):.1f} h", 'Adeguato'],
+                ['Sonno Profondo', f"{sleep_data.get('sleep_deep', 0):.1f} h", 'Adeguato']
+            ]
+            
+            sleep_table = Table(sleep_metrics, colWidths=[2*inch, 1.5*inch, 1.5*inch])
+            sleep_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#9b59b6')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f4ecf7')),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#d7bde2'))
+            ]))
+            story.append(sleep_table)
+            story.append(Spacer(1, 0.3*inch))
+        
+        # 4. CONFRONTO ALGORITMI
+        story.append(Paragraph("<b>🔍 CONFRONTO ALGORITMI HRV</b>", styles['Heading2']))
+        
+        algo_data = [
+            ['ALGORITMO', 'SDNN (ms)', 'RMSSD (ms)', 'COERENZA (%)'],
+            ['Nostro Algoritmo', f"{metrics['our_algo']['sdnn']:.1f}", f"{metrics['our_algo']['rmssd']:.1f}", f"{metrics['our_algo']['coherence']:.1f}"],
+            ['EmWave Style', f"{metrics['emwave_style']['sdnn']:.1f}", f"{metrics['emwave_style']['rmssd']:.1f}", f"{metrics['emwave_style']['coherence']:.1f}"],
+            ['Kubios Style', f"{metrics['kubios_style']['sdnn']:.1f}", f"{metrics['kubios_style']['rmssd']:.1f}", f"{metrics['kubios_style']['coherence']:.1f}"]
+        ]
+        
+        algo_table = Table(algo_data, colWidths=[1.5*inch, 1.2*inch, 1.2*inch, 1.2*inch])
+        algo_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e67e22')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#fdebd0')),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#f5b041'))
+        ]))
+        story.append(algo_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # 5. REFERENZE SCIENTIFICHE
+        story.append(Paragraph("<b>📚 REFERENZE SCIENTIFICHE</b>", styles['Heading2']))
+        
+        references_text = """
+        <b>Standard Internazionali HRV:</b><br/>
+        • Task Force of ESC/NASPE (1996) - Heart rate variability: Standards of measurement<br/>
+        • Malik M. et al. (1996) - Clinical use of HRV analysis<br/>
+        <br/>
+        <b>Valori di Riferimento:</b><br/>
+        • Nunan et al. (2010) - QJM: Valori normativi per genere ed età<br/>
+        • Shaffer F. & Ginsberg J.P. (2017) - Overview of HRV Metrics and Norms<br/>
+        <br/>
+        <b>Coerenza Cardiaca:</b><br/>
+        • McCraty R. et al. (2009) - Coherence: Bridging Personal and Global Health<br/>
+        • Lehrer P. & Gevirtz R. (2014) - Heart rate variability biofeedback
+        """
+        story.append(Paragraph(references_text, styles['Normal']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # 6. RACCOMANDAZIONI
+        story.append(Paragraph("<b>💡 RACCOMANDAZIONI CLINICHE</b>", styles['Heading2']))
+        
+        recommendations = f"""
+        • <b>Monitoraggio continuo</b> consigliato per tracciare l'andamento<br/>
+        • <b>Tecniche di respirazione coerente</b>: 5-10 minuti, 3 volte al giorno<br/>
+        • <b>Attività fisica moderata</b>: 30-45 minuti, 3-5 volte/settimana<br/>
+        • <b>Igiene del sonno</b>: mantenere orari regolari (7-9 ore per notte)<br/>
+        • <b>Gestione stress</b>: praticare meditazione o mindfulness<br/>
+        • <b>Idratazione</b>: 2-3 litri di acqua al giorno<br/>
+        • <b>Alimentazione bilanciata</b>: limitare caffeina dopo le 13:00<br/>
+        <br/>
+        <b>Valutazione complessiva:</b> {get_overall_evaluation(metrics, user_profile.get('gender', 'Uomo'))}
+        """
+        story.append(Paragraph(recommendations, styles['Normal']))
+        
+        # Data e firma
+        story.append(Spacer(1, 0.4*inch))
+        date_text = f"<i>Report generato il: {datetime.now().strftime('%d/%m/%Y %H:%M')}</i>"
+        story.append(Paragraph(date_text, styles['Italic']))
+        
+        # Genera il PDF
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+        
+    except Exception as e:
+        st.error(f"Errore nella creazione del PDF: {str(e)}")
+        # Fallback: crea un PDF semplice
+        return create_simple_pdf_fallback(metrics, start_datetime, user_profile)
+
+def create_simple_pdf_fallback(metrics, start_datetime, user_profile):
+    """Crea un PDF semplice come fallback"""
+    from reportlab.pdfgen import canvas
+    import io
     
-    info_text = f"""
-PAZIENTE:
-• Nome: {user_profile.get('name', '')} {user_profile.get('surname', '')}
-• Età: {user_profile.get('age', '')} anni | Sesso: {user_profile.get('gender', '')}
-
-PERIODO ANALISI:
-• Inizio: {start_datetime.strftime('%d/%m/%Y %H:%M')}
-• Fine: {end_datetime.strftime('%d/%m/%Y %H:%M')}
-• Durata: {selected_range}
-
-VALUTAZIONE CLINICA:
-• SDNN: {sdnn_eval} ({metrics['our_algo']['sdnn']:.1f} ms)
-• RMSSD: {rmssd_eval} ({metrics['our_algo']['rmssd']:.1f} ms)
-• Coerenza: {get_coherence_evaluation(metrics['our_algo']['coherence'])}
-• Frequenza Cardiaca: {get_hr_evaluation(metrics['our_algo']['hr_mean'])}
-
-{sleep_info}
-
-BILANCIO AUTONOMICO:
-• LF/HF Ratio: {metrics['our_algo']['lf_hf_ratio']:.2f}
-• Total Power: {metrics['our_algo']['total_power']:.0f} ms²
-
-CONCLUSIONE:
-Profilo cardiovascolare nella norma con buona variabilità
-e bilanciamento autonomico preservato.
-"""
-    
-    ax4.text(0.05, 0.95, info_text, transform=ax4.transAxes, fontsize=9, 
-             verticalalignment='top', linespacing=1.5, fontfamily='monospace')
-    
-    # 5. REFERENZE SCIENTIFICHE
-    ax5 = axes[2, 0]
-    ax5.axis('off')
-    ref_text = """
-REFERENZE SCIENTIFICHE:
-
-• Task Force ESC/NASPE (1996) - Standard HRV
-• Nunan et al. (2010) - Valori riferimento genere
-• Malik et al. (1996) - Interpretazione clinica
-• McCraty et al. (2009) - Coerenza cardiaca
-• Kleiger et al. (2005) - Rischio mortalità
-"""
-    ax5.text(0.05, 0.95, ref_text, transform=ax5.transAxes, fontsize=7, 
-             verticalalignment='top', linespacing=1.3, fontfamily='monospace',
-             bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.5))
-    
-    # 6. RACCOMANDAZIONI
-    ax6 = axes[2, 1]
-    ax6.axis('off')
-    rec_text = """
-RACCOMANDAZIONI:
-
-✓ Monitoraggio continuo consigliato
-✓ Mantenere stile di vita sano
-✓ Praticare tecniche di rilassamento
-✓ Sonno regolare 7-9 ore per notte
-✓ Idratazione adeguata (2-3L acqua/giorno)
-✓ Attività fisica moderata regolare
-✓ Limitare caffeina dopo le 13:00
-"""
-    ax6.text(0.05, 0.95, rec_text, transform=ax6.transAxes, fontsize=8, 
-             verticalalignment='top', linespacing=1.4, fontfamily='monospace',
-             bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.3))
-    
-    plt.tight_layout()
-    
-    # Salva come immagine in un buffer
     buffer = io.BytesIO()
-    plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
-    buffer.seek(0)
-    plt.close()
+    p = canvas.Canvas(buffer)
     
+    p.setFont("Helvetica-Bold", 16)
+    p.drawString(100, 800, "REPORT CARDIOLOGICO HRV")
+    
+    p.setFont("Helvetica", 12)
+    p.drawString(100, 770, f"Paziente: {user_profile.get('name', '')} {user_profile.get('surname', '')}")
+    p.drawString(100, 750, f"Data: {start_datetime.strftime('%d/%m/%Y %H:%M')}")
+    p.drawString(100, 730, f"SDNN: {metrics['our_algo']['sdnn']:.1f} ms")
+    p.drawString(100, 710, f"RMSSD: {metrics['our_algo']['rmssd']:.1f} ms")
+    p.drawString(100, 690, f"HR Medio: {metrics['our_algo']['hr_mean']:.1f} bpm")
+    
+    p.showPage()
+    p.save()
+    buffer.seek(0)
     return buffer
+
+def get_overall_evaluation(metrics, gender):
+    """Restituisce una valutazione complessiva"""
+    sdnn = metrics['our_algo']['sdnn']
+    rmssd = metrics['our_algo']['rmssd']
+    coherence = metrics['our_algo']['coherence']
+    
+    good_count = 0
+    if (gender == "Donna" and sdnn >= 35) or (gender == "Uomo" and sdnn >= 30):
+        good_count += 1
+    if (gender == "Donna" and rmssd >= 25) or (gender == "Uomo" and rmssd >= 20):
+        good_count += 1
+    if coherence >= 50:
+        good_count += 1
+    
+    if good_count == 3:
+        return "ECCELLENTE - Profilo cardiovascolare ottimale"
+    elif good_count >= 2:
+        return "BUONO - Profilo nella norma con buona resilienza"
+    else:
+        return "DA MIGLIORARE - Consigliato monitoraggio attento"
 
 # =============================================================================
 # PROFILO UTENTE
@@ -1303,11 +1414,16 @@ st.markdown("---")
 st.header("📄 Esporta Report Completo")
 
 # Usa una chiave univoca per evitare conflitti
-if st.button("🖨️ Genera Report Completo (PNG)", type="primary", use_container_width=True, key="generate_report_final"):
-    with st.spinner("📊 Generando report completo..."):
+if st.button("🖨️ Genera Report Completo (PDF)", type="primary", use_container_width=True, key="generate_pdf_report_final"):
+    with st.spinner("📊 Generando report PDF..."):
         try:
+            # Assicurati che adjusted_metrics sia disponibile
+            if 'adjusted_metrics' not in locals() and 'adjusted_metrics' not in globals():
+                st.error("❌ Errore: esegui prima l'analisi completa")
+                st.stop()
+            
             pdf_buffer = create_pdf_report(
-                metrics, 
+                adjusted_metrics,  # USA adjusted_metrics invece di metrics
                 start_datetime, 
                 end_datetime, 
                 selected_range,
@@ -1315,25 +1431,20 @@ if st.button("🖨️ Genera Report Completo (PNG)", type="primary", use_contain
                 st.session_state.activities
             )
             
-            st.success("✅ Report generato con successo!")
+            st.success("✅ Report PDF generato con successo!")
             
             # Crea un download button con chiave univoca
             st.download_button(
-                label="📥 Scarica Report Completo (PNG)",
+                label="📥 Scarica Report Completo (PDF)",
                 data=pdf_buffer,
-                file_name=f"report_hrv_{st.session_state.user_profile['name']}_{start_datetime.strftime('%Y%m%d_%H%M')}.png",
-                mime="image/png",
+                file_name=f"report_hrv_{st.session_state.user_profile['name']}_{start_datetime.strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
                 use_container_width=True,
-                key="download_report_final"
+                key="download_pdf_report_final"
             )
             
-            # Anteprima del report
-            st.subheader("👁️ Anteprima Report")
-            st.image(pdf_buffer, caption="Report Cardiologico Completo", use_column_width=True)
-            
         except Exception as e:
-            st.error(f"❌ Errore nella generazione del report: {str(e)}")
-            st.info("💡 Suggerimento: Verifica che tutte le metriche siano calcolate correttamente")
+            st.error(f"❌ Errore nella generazione del report PDF: {str(e)}")
     
     # 8. SALVA NEL DATABASE UTENTE - SOLO SE L'ANALISI È COMPLETATA
     try:
