@@ -599,7 +599,7 @@ def create_activity_tracker():
         st.sidebar.subheader("📋 Gestione Attività")
         
         for i, activity in enumerate(st.session_state.activities[-10:]):
-            with st.sidebar.expander(f"{activity['name']} - {activity['start_time'].strftime('%d/%m %H:%M')}", False):
+            with st.sidebar.expander(f"{activity['name']} - {activity['start_time'].strftime('%d/%m/%Y %H:%M')}", False):
                 st.write(f"**Tipo:** {activity['type']}")
                 st.write(f"**Intensità:** {activity['intensity']}")
                 if activity['food_items']:
@@ -1473,7 +1473,7 @@ def create_daily_analysis_visualization(daily_analyses):
                 if day_analysis['activities']:
                     st.subheader("🏃‍♂️ Attività del Giorno")
                     for activity in day_analysis['activities']:
-                        st.write(f"• **{activity['name']}** ({activity['type']}) - {activity['intensity']} - {activity['start_time'].strftime('%H:%M')} ({activity['duration']} min)")
+                        st.write(f"• **{activity['name']}** ({activity['type']}) - {activity['intensity']} - {activity['start_time'].strftime('%d/%m/%Y %H:%M')} ({activity['duration']} min)")
                 
                 # Analisi alimentare
                 nutrition = day_analysis.get('nutrition_impact', {})
