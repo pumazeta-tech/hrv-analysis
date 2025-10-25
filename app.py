@@ -20,8 +20,8 @@ from scipy import stats
 
 def load_user_database():
     """Carica il database utenti da file JSON"""
-    if os.path.exists('user_database.json'):
-        try:
+    try:
+        if os.path.exists('user_database.json'):
             with open('user_database.json', 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 # Convert string dates back to datetime objects
@@ -41,12 +41,13 @@ def load_user_database():
                         for day_analysis in analysis.get('daily_analyses', []):
                             day_analysis['start_time'] = datetime.fromisoformat(day_analysis['start_time'])
                             day_analysis['end_time'] = datetime.fromisoformat(day_analysis['end_time'])
-                            day_analysis['date'] = datetime.fromisoformat(day_analysis['date']).date() if day_analysis['date'] else None
+                            if day_analysis.get('date'):
+                                day_analysis['date'] = datetime.fromisoformat(day_analysis['date']).date()
                 return data
-        except Exception as e:
-            st.error(f"Errore nel caricamento database: {e}")
-            return {}
-    return {}
+        return {}
+    except Exception as e:
+        st.error(f"Errore nel caricamento database: {e}")
+        return {}
 
 def save_user_database():
     """Salva il database utenti su file JSON"""
@@ -78,7 +79,7 @@ def save_user_database():
                     serializable_day = day_analysis.copy()
                     serializable_day['start_time'] = day_analysis['start_time'].isoformat()
                     serializable_day['end_time'] = day_analysis['end_time'].isoformat()
-                    serializable_day['date'] = day_analysis['date'].isoformat() if day_analysis['date'] else None
+                    serializable_day['date'] = day_analysis['date'].isoformat() if day_analysis.get('date') else None
                     serializable_analysis['daily_analyses'].append(serializable_day)
                 
                 serializable_db[user_key]['analyses'].append(serializable_analysis)
@@ -815,7 +816,8 @@ def analyze_activity_impact_on_ans(day_activities, daily_metrics):
             'activity': activity['name'],
             'type': activity['type'],
             'intensity': activity['intensity'],
-            'impact': 'Neutro'
+            'impact': 'Neutro',
+            'recommendation': 'Nessuna raccomandazione specifica'
         }
         
         if activity['type'] == 'Allenamento':
@@ -823,28 +825,46 @@ def analyze_activity_impact_on_ans(day_activities, daily_metrics):
                 if daily_metrics['rmssd'] < 30:
                     impact['impact'] = 'Stress Simpatico Elevato'
                     impact['recommendation'] = "Recupero insufficiente - ridurre intensità allenamenti"
+                    impact['ans_balance'] = 'Simpatico-dominante'
                 else:
                     impact['impact'] = 'Stimolo Allenante Ottimale'
                     impact['recommendation'] = "Buon recupero - mantenere programma"
+                    impact['ans_balance'] = 'Bilanciato'
             
             elif activity['intensity'] in ['Leggera', 'Moderata']:
                 impact['impact'] = 'Stimolo Allenante Adeguato'
                 impact['recommendation'] = "Attività ben tollerata"
+                impact['ans_balance'] = 'Leggermente parasimpatico'
         
         elif activity['type'] == 'Stress':
             if daily_metrics['lf_hf_ratio'] > 2.5:
                 impact['impact'] = 'Attivazione Simpatica Eccessiva'
-                impact['recommendation'] = "Praticare tecniche di rilassamento"
+                impact['recommendation'] = "Praticare tecniche di rilassamento e respirazione"
+                impact['ans_balance'] = 'Simpatico-dominante'
             else:
                 impact['impact'] = 'Stress Gestito Adeguatamente'
+                impact['recommendation'] = "Continua con le attuali strategie di gestione"
+                impact['ans_balance'] = 'Bilanciato'
         
         elif activity['type'] == 'Riposo':
             if daily_metrics['rmssd'] > 40:
                 impact['impact'] = 'Recupero Parasimpatico Ottimale'
                 impact['recommendation'] = "Ottimo! Continua con attività rigenerative"
+                impact['ans_balance'] = 'Parasimpatico-dominante'
             else:
                 impact['impact'] = 'Recupero Parziale'
-                impact['recommendation'] = "Aumentare tempo dedicato al riposo"
+                impact['recommendation'] = "Aumentare tempo dedicato al riposo attivo"
+                impact['ans_balance'] = 'Transizione simpatico-parasimpatico'
+        
+        elif activity['type'] == 'Alimentazione':
+            if activity['intensity'] == 'Molto pesante':
+                impact['impact'] = 'Impatto Digestivo Significativo'
+                impact['recommendation'] = "Pasti più leggeri e frazionati"
+                impact['ans_balance'] = 'Simpatico-attivazione digestiva'
+            else:
+                impact['impact'] = 'Alimentazione Ben Gestita'
+                impact['recommendation'] = "Mantieni bilanciamento nutrizionale"
+                impact['ans_balance'] = 'Bilanciato'
         
         impacts.append(impact)
     
@@ -1332,7 +1352,7 @@ def create_daily_analysis_visualization(daily_analyses):
     hr_values = [day['metrics']['hr_mean'] for day in daily_analyses]
     
     # Crea tabs per organizzare meglio le informazioni
-    tab1, tab2, tab3 = st.tabs(["📊 Andamento Giornaliero", "🎯 Analisi Dettagliata", "📈 Analisi Spettrale"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Andamento Giornaliero", "🎯 Analisi Dettagliata", "📈 Analisi Spettrale", "🏃‍♂️ Impatto Attività"])
     
     with tab1:
         # Grafico andamento metriche principali
@@ -1404,27 +1424,27 @@ def create_daily_analysis_visualization(daily_analyses):
                     st.metric("Potenza Totale", f"{day_analysis['metrics']['total_power']:.0f} ms²")
                 
                 # Analisi del sonno per il giorno
-                st.subheader("😴 Analisi Sonno")
-                sleep_cols = st.columns(4)
-                with sleep_cols[0]:
-                    st.metric("Durata Totale", f"{day_analysis['metrics'].get('sleep_duration', 0):.1f} h")
-                with sleep_cols[1]:
-                    st.metric("Efficienza", f"{day_analysis['metrics'].get('sleep_efficiency', 0):.0f}%")
-                with sleep_cols[2]:
-                    st.metric("Sonno Leggero", f"{day_analysis['metrics'].get('sleep_light', 0):.1f} h")
-                with sleep_cols[3]:
-                    st.metric("Sonno Profondo", f"{day_analysis['metrics'].get('sleep_deep', 0):.1f} h")
-                
-                sleep_cols2 = st.columns(3)
-                with sleep_cols2[0]:
-                    st.metric("Sonno REM", f"{day_analysis['metrics'].get('sleep_rem', 0):.1f} h")
-                with sleep_cols2[1]:
-                    st.metric("Risvegli", f"{day_analysis['metrics'].get('sleep_awake', 0):.1f} h")
-                with sleep_cols2[2]:
-                    st.metric("FC Notturna", f"{day_analysis['metrics'].get('sleep_hr', 0):.0f} bpm")
-                
-                # Grafico a torta per le fasi del sonno
                 if day_analysis['metrics'].get('sleep_duration', 0) > 0:
+                    st.subheader("😴 Analisi Sonno")
+                    sleep_cols = st.columns(4)
+                    with sleep_cols[0]:
+                        st.metric("Durata Totale", f"{day_analysis['metrics'].get('sleep_duration', 0):.1f} h")
+                    with sleep_cols[1]:
+                        st.metric("Efficienza", f"{day_analysis['metrics'].get('sleep_efficiency', 0):.0f}%")
+                    with sleep_cols[2]:
+                        st.metric("Sonno Leggero", f"{day_analysis['metrics'].get('sleep_light', 0):.1f} h")
+                    with sleep_cols[3]:
+                        st.metric("Sonno Profondo", f"{day_analysis['metrics'].get('sleep_deep', 0):.1f} h")
+                    
+                    sleep_cols2 = st.columns(3)
+                    with sleep_cols2[0]:
+                        st.metric("Sonno REM", f"{day_analysis['metrics'].get('sleep_rem', 0):.1f} h")
+                    with sleep_cols2[1]:
+                        st.metric("Risvegli", f"{day_analysis['metrics'].get('sleep_awake', 0):.1f} h")
+                    with sleep_cols2[2]:
+                        st.metric("FC Notturna", f"{day_analysis['metrics'].get('sleep_hr', 0):.0f} bpm")
+                    
+                    # Grafico a torta per le fasi del sonno
                     sleep_phases = ['Leggero', 'Profondo', 'REM', 'Risvegli']
                     sleep_values = [
                         day_analysis['metrics'].get('sleep_light', 0),
@@ -1529,6 +1549,35 @@ def create_daily_analysis_visualization(daily_analyses):
         
         df_spectral = pd.DataFrame(spectral_data)
         st.dataframe(df_spectral, use_container_width=True, hide_index=True)
+    
+    with tab4:
+        # Analisi impatto attività sul SNA
+        st.subheader("🏃‍♂️ Impatto Attività sul Sistema Neurovegetativo")
+        
+        for day_analysis in daily_analyses:
+            with st.expander(f"📊 Giorno {day_analysis['day_number']} - {day_analysis['date'].strftime('%d/%m/%Y')}", expanded=False):
+                activity_impacts = day_analysis.get('activity_impact', [])
+                
+                if activity_impacts:
+                    for impact in activity_impacts:
+                        col1, col2 = st.columns([1, 2])
+                        with col1:
+                            st.write(f"**Attività:** {impact['activity']}")
+                            st.write(f"**Tipo:** {impact['type']}")
+                            st.write(f"**Intensità:** {impact['intensity']}")
+                        with col2:
+                            if impact['impact'] == 'Stress Simpatico Elevato':
+                                st.error(f"**Impatto SNA:** {impact['impact']}")
+                            elif impact['impact'] == 'Recupero Parasimpatico Ottimale':
+                                st.success(f"**Impatto SNA:** {impact['impact']}")
+                            else:
+                                st.info(f"**Impatto SNA:** {impact['impact']}")
+                            
+                            st.write(f"**Bilanciamento ANS:** {impact.get('ans_balance', 'Non specificato')}")
+                            st.write(f"**Raccomandazione:** {impact['recommendation']}")
+                        st.divider()
+                else:
+                    st.info("Nessuna attività registrata per questo giorno")
 
 # =============================================================================
 # FUNZIONE PER CREARE PDF MIGLIORATO
@@ -1546,8 +1595,6 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
         from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
         from reportlab.graphics.shapes import Drawing, Rect
-        from reportlab.graphics.charts.barcharts import VerticalBarChart
-        from reportlab.graphics.charts.piecharts import Pie
         import io
         import matplotlib.pyplot as plt
         import numpy as np
@@ -1599,18 +1646,19 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
             alignment=TA_JUSTIFY
         )
         
+        small_style = ParagraphStyle(
+            'CustomSmall',
+            parent=styles['Normal'],
+            fontSize=8,
+            textColor=HexColor("#7f8c8d"),
+            spaceAfter=4,
+            alignment=TA_JUSTIFY
+        )
+        
         story = []
         
         # INTESTAZIONE CON SFONDO COLORATO
-        header_bg = Drawing(400, 60)
-        header_bg.add(Rect(0, 0, 400, 60, fillColor=HexColor("#3498db"), strokeColor=HexColor("#2980b9")))
-        
-        story.append(header_bg)
-        story.append(Spacer(1, 10))
-        
-        # Titolo principale
-        title_text = f"<b>REPORT HRV COMPLETO</b><br/><font size=10>Analisi Sistema Neurovegetativo</font>"
-        story.append(Paragraph(title_text, title_style))
+        story.append(Paragraph("<b>REPORT HRV COMPLETO</b><br/><font size=10>Analisi Sistema Neurovegetativo</font>", title_style))
         story.append(Spacer(1, 15))
         
         # Informazioni utente in box colorati
@@ -1629,34 +1677,34 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
         story.append(Paragraph("<b>METRICHE HRV PRINCIPALI</b>", heading_style))
         
         main_metrics_data = [
-            ['METRICA', 'VALORE', 'VALUTAZIONE', 'SIGNIFICATO CLINICO'],
+            ['METRICA', 'VALORE', 'VALUTAZIONE', 'SIGNIFICATO'],
             [
-                'SDNN (Variabilità Totale)', 
+                'SDNN', 
                 f"{metrics['sdnn']:.1f} ms", 
                 get_sdnn_evaluation(metrics['sdnn'], user_profile.get('gender', 'Uomo')),
-                'Variabilità complessiva del sistema'
+                'Variabilità complessiva sistema'
             ],
             [
-                'RMSSD (Parasimpatico)', 
+                'RMSSD', 
                 f"{metrics['rmssd']:.1f} ms", 
                 get_rmssd_evaluation(metrics['rmssd'], user_profile.get('gender', 'Uomo')),
                 'Attività vagale e recupero'
             ],
             [
-                'Frequenza Cardiaca Media', 
+                'FC Media', 
                 f"{metrics['hr_mean']:.1f} bpm", 
                 get_hr_evaluation(metrics['hr_mean']),
-                'Stato basale sistema cardiovascolare'
+                'Stato basale cardiovascolare'
             ],
             [
-                'Coerenza Cardiaca', 
+                'Coerenza', 
                 f"{metrics['coherence']:.1f}%", 
                 get_coherence_evaluation(metrics['coherence']),
-                'Sincronizzazione sistemi fisiologici'
+                'Sincronizzazione fisiologica'
             ]
         ]
         
-        main_table = Table(main_metrics_data, colWidths=[100, 60, 80, 120])
+        main_table = Table(main_metrics_data, colWidths=[70, 50, 60, 120])
         main_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), HexColor("#3498db")),
             ('TEXTCOLOR', (0, 0), (-1, 0), white),
@@ -1676,35 +1724,35 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
         story.append(Paragraph("<b>ANALISI SPETTRALE HRV</b>", heading_style))
         
         spectral_data = [
-            ['BANDA FREQUENZA', 'POTENZA (ms²)', 'INTERPRETAZIONE CLINICA'],
+            ['BANDA', 'POTENZA', 'INTERPRETAZIONE'],
             [
                 'VLF (0.003-0.04 Hz)', 
-                f"{metrics['vlf']:.0f}", 
-                'Sistemi termoregolatori, renina-angiotensina'
+                f"{metrics['vlf']:.0f} ms²", 
+                'Sistemi termoregolatori e renina-angiotensina'
             ],
             [
                 'LF (0.04-0.15 Hz)', 
-                f"{metrics['lf']:.0f}", 
-                'Attività simpatica, regolazione pressione'
+                f"{metrics['lf']:.0f} ms²", 
+                'Attività simpatica e regolazione pressione'
             ],
             [
                 'HF (0.15-0.4 Hz)', 
-                f"{metrics['hf']:.0f}", 
-                'Attività parasimpatica, respirazione'
+                f"{metrics['hf']:.0f} ms²", 
+                'Attività parasimpatica e respirazione'
             ],
             [
                 'TOTALE', 
-                f"{metrics['total_power']:.0f}", 
+                f"{metrics['total_power']:.0f} ms²", 
                 'Riserva autonomica complessiva'
             ],
             [
-                'RAPPORTO LF/HF', 
+                'LF/HF', 
                 f"{metrics['lf_hf_ratio']:.2f}", 
-                f"Bilanciamento autonomico: {get_lf_hf_evaluation(metrics['lf_hf_ratio'])}"
+                f"{get_lf_hf_evaluation(metrics['lf_hf_ratio'])}"
             ]
         ]
         
-        spectral_table = Table(spectral_data, colWidths=[90, 60, 130])
+        spectral_table = Table(spectral_data, colWidths=[70, 50, 130])
         spectral_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), HexColor("#2c3e50")),
             ('TEXTCOLOR', (0, 0), (-1, 0), white),
@@ -1718,110 +1766,83 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
         story.append(spectral_table)
         story.append(Spacer(1, 20))
         
-        # ANALISI SONNO
-        if metrics.get('sleep_duration', 0) > 0:
-            story.append(Paragraph("<b>ANALISI QUALITÀ SONNO</b>", heading_style))
-            
-            sleep_data = [
-                ['PARAMETRO', 'VALORE', 'VALUTAZIONE'],
-                ['Durata Totale', f"{metrics['sleep_duration']:.1f} ore", 'Ottimale' if metrics['sleep_duration'] >= 7 else 'Da migliorare'],
-                ['Efficienza', f"{metrics['sleep_efficiency']:.0f}%", 'Buona' if metrics['sleep_efficiency'] >= 85 else 'Da migliorare'],
-                ['Sonno Leggero', f"{metrics.get('sleep_light', 0):.1f} ore", f"{metrics.get('sleep_light', 0)/metrics['sleep_duration']*100:.0f}%"],
-                ['Sonno Profondo', f"{metrics.get('sleep_deep', 0):.1f} ore", f"{metrics.get('sleep_deep', 0)/metrics['sleep_duration']*100:.0f}%"],
-                ['Sonno REM', f"{metrics.get('sleep_rem', 0):.1f} ore", f"{metrics.get('sleep_rem', 0)/metrics['sleep_duration']*100:.0f}%"],
-                ['FC Notturna', f"{metrics['sleep_hr']:.0f} bpm", 'Normale' if metrics['sleep_hr'] <= 65 else 'Elevata']
-            ]
-            
-            sleep_table = Table(sleep_data, colWidths=[80, 60, 60])
-            sleep_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), HexColor("#9b59b6")),
-                ('TEXTCOLOR', (0, 0), (-1, 0), white),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-                ('BACKGROUND', (0, 1), (-1, -1), HexColor("#f4ecf7")),
-                ('GRID', (0, 0), (-1, -1), 0.5, HexColor("#d7bde2")),
-            ]))
-            
-            story.append(sleep_table)
-            story.append(Spacer(1, 20))
-        
-        # ANALISI GIORNALIERA DETTAGLIATA
+        # ANALISI SONNO PER GIORNI SEPARATI
         if daily_analyses:
-            story.append(PageBreak())  # Nuova pagina per analisi giornaliera
-            story.append(Paragraph("<b>ANALISI GIORNALIERA DETTAGLIATA</b>", heading_style))
+            story.append(Paragraph("<b>ANALISI SONNO GIORNALIERA</b>", heading_style))
             
             for day in daily_analyses:
-                story.append(Paragraph(f"<b>Giorno {day['day_number']} - {day['date']}</b>", subheading_style))
-                
-                # Metriche principali del giorno
-                day_metrics_data = [
-                    ['SDNN', f"{day['metrics']['sdnn']:.1f} ms", get_sdnn_evaluation(day['metrics']['sdnn'], user_profile.get('gender', 'Uomo'))],
-                    ['RMSSD', f"{day['metrics']['rmssd']:.1f} ms", get_rmssd_evaluation(day['metrics']['rmssd'], user_profile.get('gender', 'Uomo'))],
-                    ['FC Media', f"{day['metrics']['hr_mean']:.1f} bpm", get_hr_evaluation(day['metrics']['hr_mean'])],
-                    ['Coerenza', f"{day['metrics']['coherence']:.1f}%", get_coherence_evaluation(day['metrics']['coherence'])],
-                    ['LF/HF', f"{day['metrics']['lf_hf_ratio']:.2f}", get_lf_hf_evaluation(day['metrics']['lf_hf_ratio'])],
-                    ['Battiti', f"{day['rr_count']:,}", f"{day['recording_hours']:.1f} ore"]
-                ]
-                
-                day_table = Table(day_metrics_data, colWidths=[60, 50, 80])
-                day_table.setStyle(TableStyle([
-                    ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 0), (-1, -1), 8),
-                    ('BACKGROUND', (0, 0), (-1, -1), HexColor("#f8f9fa")),
-                    ('GRID', (0, 0), (-1, -1), 0.5, HexColor("#bdc3c7")),
-                ]))
-                
-                story.append(day_table)
-                
-                # Analisi spettrale del giorno
-                spectral_day_data = [
-                    ['VLF', f"{day['metrics']['vlf']:.0f} ms²"],
-                    ['LF', f"{day['metrics']['lf']:.0f} ms²"],
-                    ['HF', f"{day['metrics']['hf']:.0f} ms²"],
-                    ['Totale', f"{day['metrics']['total_power']:.0f} ms²"]
-                ]
-                
-                spectral_table_day = Table(spectral_day_data, colWidths=[40, 50])
-                spectral_table_day.setStyle(TableStyle([
-                    ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 0), (-1, -1), 8),
-                    ('BACKGROUND', (0, 0), (-1, -1), HexColor("#e8f6f3")),
-                    ('GRID', (0, 0), (-1, -1), 0.5, HexColor("#a2d9ce")),
-                ]))
-                
-                story.append(spectral_table_day)
-                story.append(Spacer(1, 10))
+                if day['metrics'].get('sleep_duration', 0) > 0:
+                    story.append(Paragraph(f"<b>Giorno {day['day_number']} - {day['date']}</b>", subheading_style))
+                    
+                    sleep_data = [
+                        ['PARAMETRO', 'VALORE', 'VALUTAZIONE'],
+                        ['Durata', f"{day['metrics']['sleep_duration']:.1f} h", 'Ottimale' if day['metrics']['sleep_duration'] >= 7 else 'Da migliorare'],
+                        ['Efficienza', f"{day['metrics']['sleep_efficiency']:.0f}%", 'Buona' if day['metrics']['sleep_efficiency'] >= 85 else 'Da migliorare'],
+                        ['Leggero', f"{day['metrics'].get('sleep_light', 0):.1f} h", f"{day['metrics'].get('sleep_light', 0)/day['metrics']['sleep_duration']*100:.0f}%"],
+                        ['Profondo', f"{day['metrics'].get('sleep_deep', 0):.1f} h", f"{day['metrics'].get('sleep_deep', 0)/day['metrics']['sleep_duration']*100:.0f}%"],
+                        ['REM', f"{day['metrics'].get('sleep_rem', 0):.1f} h", f"{day['metrics'].get('sleep_rem', 0)/day['metrics']['sleep_duration']*100:.0f}%"],
+                        ['FC Notturna', f"{day['metrics']['sleep_hr']:.0f} bpm", 'Normale' if day['metrics']['sleep_hr'] <= 65 else 'Elevata']
+                    ]
+                    
+                    sleep_table = Table(sleep_data, colWidths=[60, 40, 60])
+                    sleep_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), HexColor("#9b59b6")),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), white),
+                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, -1), 8),
+                        ('BACKGROUND', (0, 1), (-1, -1), HexColor("#f4ecf7")),
+                        ('GRID', (0, 0), (-1, -1), 0.5, HexColor("#d7bde2")),
+                    ]))
+                    
+                    story.append(sleep_table)
+                    story.append(Spacer(1, 10))
+        
+        # ANALISI IMPATTO ATTIVITÀ SUL SNA
+        if daily_analyses and any(day.get('activity_impact') for day in daily_analyses):
+            story.append(Paragraph("<b>IMPATTO ATTIVITÀ SUL SNA</b>", heading_style))
+            
+            for day in daily_analyses:
+                activity_impacts = day.get('activity_impact', [])
+                if activity_impacts:
+                    story.append(Paragraph(f"<b>Giorno {day['day_number']} - {day['date']}</b>", subheading_style))
+                    
+                    for impact in activity_impacts:
+                        activity_text = f"""
+                        <b>{impact['activity']}</b> ({impact['type']}, {impact['intensity']})<br/>
+                        <i>Impatto SNA:</i> {impact['impact']} | <i>Bilanciamento:</i> {impact.get('ans_balance', 'N/D')}<br/>
+                        <i>Raccomandazione:</i> {impact['recommendation']}
+                        """
+                        story.append(Paragraph(activity_text, small_style))
+                        story.append(Spacer(1, 5))
+                    
+                    story.append(Spacer(1, 10))
         
         # RACCOMANDAZIONI E CONCLUSIONI
-        story.append(PageBreak())  # Nuova pagina per raccomandazioni
-        story.append(Paragraph("<b>VALUTAZIONE CLINICA E RACCOMANDAZIONI</b>", heading_style))
+        story.append(Paragraph("<b>VALUTAZIONE E RACCOMANDAZIONI</b>", heading_style))
         
         weaknesses = identify_weaknesses({'our_algo': metrics}, user_profile)
         
         if len(weaknesses) <= 1:
             overall = "🟢 <b>PROFILO ECCELLENTE</b> - Sistema nervoso autonomo ben bilanciato e funzionale"
-            color = HexColor("#27ae60")
         elif len(weaknesses) <= 3:
             overall = "🟡 <b>PROFILO BUONO</b> - Alcuni aspetti richiedono attenzione e ottimizzazione"
-            color = HexColor("#f39c12")
         else:
             overall = "🔴 <b>PROFILO DA MIGLIORARE</b> - Spazio significativo di ottimizzazione"
-            color = HexColor("#e74c3c")
         
-        overall_para = Paragraph(overall, normal_style)
-        story.append(overall_para)
+        story.append(Paragraph(overall, normal_style))
         story.append(Spacer(1, 10))
         
-        story.append(Paragraph("<b>PUNTI DI ATTENZIONE IDENTIFICATI:</b>", subheading_style))
+        story.append(Paragraph("<b>PUNTI DI ATTENZIONE:</b>", subheading_style))
         for weakness in weaknesses:
             story.append(Paragraph(f"• {weakness}", normal_style))
         
         story.append(Spacer(1, 10))
         
+        # RACCOMANDAZIONI SPECIFICHE
+        recommendations = generate_recommendations({'our_algo': metrics}, user_profile, weaknesses)
         story.append(Paragraph("<b>RACCOMANDAZIONI SPECIFICHE:</b>", subheading_style))
         
-        recommendations = generate_recommendations({'our_algo': metrics}, user_profile, weaknesses)
         for category, recs in recommendations.items():
             story.append(Paragraph(f"<b>{category.upper()}:</b>", normal_style))
             for rec in recs:
@@ -1830,7 +1851,23 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
         
         story.append(Spacer(1, 15))
         
-        # NOTE FINALI
+        # REFERENZE SCIENTIFICHE
+        story.append(Paragraph("<b>REFERENZE SCIENTIFICHE</b>", heading_style))
+        
+        references = [
+            "• Task Force of the European Society of Cardiology (1996). Heart rate variability: Standards of measurement, physiological interpretation, and clinical use",
+            "• Malik et al. (1996). Heart rate variability: Standards of measurement, physiological interpretation, and clinical use. European Heart Journal",
+            "• Shaffer F. et al. (2014). An overview of heart rate variability metrics and norms. Frontiers in Public Health",
+            "• McCraty R. et al. (2009). The coherent heart: Heart-brain interactions, psychophysiological coherence, and the emergence of system-wide order",
+            "• Nunan D. et al. (2010). A quantitative systematic review of normal values for short-term heart rate variability in healthy adults"
+        ]
+        
+        for ref in references:
+            story.append(Paragraph(ref, small_style))
+        
+        story.append(Spacer(1, 15))
+        
+        # NOTE IMPORTANTI
         story.append(Paragraph("<b>NOTE IMPORTANTI</b>", subheading_style))
         notes_text = """
         <i>
@@ -1852,7 +1889,7 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
         Data di generazione: {datetime.now().strftime('%d/%m/%Y alle %H:%M')}<br/>
         <b>Questo report ha scopo informativo e di benessere generale.</b></i>
         """
-        story.append(Paragraph(footer_text, normal_style))
+        story.append(Paragraph(footer_text, small_style))
         
         # GENERA IL PDF
         doc.build(story)
@@ -2219,6 +2256,7 @@ def main():
                 daily_analyses = analyze_daily_metrics(
                     rr_intervals, start_datetime, st.session_state.user_profile, st.session_state.activities
                 )
+                st.info(f"📅 **Analisi giornaliera:** {len(daily_analyses)} giorni analizzati")
             
             # Salva metriche per report
             st.session_state.last_analysis_metrics = metrics
@@ -2227,7 +2265,8 @@ def main():
             st.session_state.last_analysis_duration = selected_range
             
             # Salva nel database
-            save_analysis_to_user_database(metrics, start_datetime, end_datetime, selected_range, "Analisi HRV", daily_analyses)
+            if save_analysis_to_user_database(metrics, start_datetime, end_datetime, selected_range, "Analisi HRV", daily_analyses):
+                st.success("✅ Analisi salvata nel database!")
             
             # =============================================================================
             # VISUALIZZAZIONE RISULTATI COMPLETA E CORRETTA
@@ -2481,6 +2520,9 @@ def main():
         ```bash
         pip install streamlit pandas numpy matplotlib plotly scipy reportlab
         ```
+        
+        ### 📁 Salvataggio dati:
+        I dati vengono salvati localmente nel file `user_database.json` nella stessa cartella dell'applicazione.
         """)
 
 if __name__ == "__main__":
