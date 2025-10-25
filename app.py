@@ -2252,7 +2252,6 @@ with st.sidebar:
         key="birth_date_input"
     )
 
-    # Mostra la data nel formato italiano
     if st.session_state.user_profile['birth_date']:
         st.write(f"Data selezionata: {st.session_state.user_profile['birth_date'].strftime('%d/%m/%Y')}")
     
@@ -2262,21 +2261,35 @@ with st.sidebar:
     
     if st.session_state.user_profile['birth_date']:
         age = datetime.now().year - st.session_state.user_profile['birth_date'].year
-        # Aggiusta l'età se il compleanno di quest'anno non è ancora arrivato
         if (datetime.now().month, datetime.now().day) < (st.session_state.user_profile['birth_date'].month, st.session_state.user_profile['birth_date'].day):
             age -= 1
         st.session_state.user_profile['age'] = age
         st.info(f"Età: {age} anni")
     
-    # PULSANTE SALVATAGGIO PRINCIPALE - SEMPRE VISIBILE
+    # PULSANTE SALVA UTENTE - SEMPLICE E VISIBILE
     st.divider()
-    if st.button("💾 SALVA UTENTE NEL DATABASE", type="primary", use_container_width=True):
+    st.header("💾 Salvataggio")
+    
+    if st.button("SALVA UTENTE NEL DATABASE", type="primary", use_container_width=True):
         if save_current_user():
-            st.success("✅ Utente salvato nel database!")
+            st.success("✅ Utente salvato!")
         else:
             st.error("❌ Inserisci nome, cognome e data di nascita")
     
-    # Poi il resto...
+    # DEBUG VISUALE
+    st.divider()
+    st.header("🔧 Debug")
+    st.write(f"Nome: {st.session_state.user_profile['name']}")
+    st.write(f"Cognome: {st.session_state.user_profile['surname']}")
+    st.write(f"Data: {st.session_state.user_profile['birth_date']}")
+    
+    import os
+    if os.path.exists('user_database.json'):
+        st.success("✅ user_database.json ESISTE")
+    else:
+        st.error("❌ user_database.json NON TROVATO")
+    
+    # Solo le attività, niente storico utenti per ora
     create_activity_tracker()
     create_user_history_interface()
         
