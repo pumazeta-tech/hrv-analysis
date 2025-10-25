@@ -127,7 +127,7 @@ def get_user_key(user_profile):
     return f"{user_profile['name'].lower()}_{user_profile['surname'].lower()}_{user_profile['birth_date'].isoformat()}"
 
 def init_session_state():
-    """Inizializza lo stato della sessione con persistenza"""
+    """Inizializza lo stato della sessione con persistenza - SENZA NEUROKIT2"""
     # Carica il database all'inizio
     if 'user_database' not in st.session_state:
         st.session_state.user_database = load_user_database()
@@ -165,6 +165,11 @@ def init_session_state():
         st.session_state.last_analysis_duration = None
     if 'editing_activity_index' not in st.session_state:
         st.session_state.editing_activity_index = None
+    
+    # PULISCE LA SIDEBAR - AGGIUNGI QUESTA RIGA
+    if 'sidebar_cleared' not in st.session_state:
+        st.sidebar.empty()
+        st.session_state.sidebar_cleared = True
 
 # =============================================================================
 # FUNZIONI PER CALCOLI HRV
