@@ -397,11 +397,19 @@ def analyze_daily_metrics(rr_intervals, start_datetime, user_profile, activities
     
     if len(rr_intervals) == 0:
         return daily_analyses
+    # DEBUG
+    print(f"DEBUG DAILY: Analisi giornaliera da {start_datetime}")
+    print(f"DEBUG DAILY: Numero attività totali: {len(activities)}")
     
     # Calcola durata totale in giorni
     total_duration_ms = np.sum(rr_intervals)
     total_duration_hours = total_duration_ms / (1000 * 60 * 60)
     total_days = int(np.ceil(total_duration_hours / 24))
+    # DEBUG - AGGIUNGI QUESTA PARTE
+    print(f"DEBUG DAILY: Analisi giornaliera da {start_datetime}")
+    print(f"DEBUG DAILY: Numero attività totali: {len(activities)}")
+    for i, act in enumerate(activities):
+        print(f"DEBUG DAILY: Attività {i}: {act['name']} - {act['start_time']}")
     
     current_index = 0
     accumulated_ms = 0
@@ -409,6 +417,9 @@ def analyze_daily_metrics(rr_intervals, start_datetime, user_profile, activities
     for day in range(total_days):
         day_start = start_datetime + timedelta(days=day)
         day_end = day_start + timedelta(hours=24)
+        # DEBUG per ogni giorno
+        print(f"DEBUG DAILY: Giorno {day+1}: {day_start} -> {day_end}")
+
         
         # Seleziona RR intervals per questo giorno
         day_rr = []
@@ -430,7 +441,10 @@ def analyze_daily_metrics(rr_intervals, start_datetime, user_profile, activities
             day_activities = get_activities_for_period(activities, day_start, day_end)
             nutrition_impact = analyze_nutritional_impact_day(day_activities, daily_metrics)
             activity_impact = analyze_activity_impact_on_ans(day_activities, daily_metrics)
-            
+            # DEBUG attività trovate
+            print(f"DEBUG DAILY:   Attività trovate per giorno {day+1}: {len(day_activities)}")
+            for act in day_activities:
+                print(f"DEBUG DAILY:     - {act['name']} - {act['start_time']}")          
             daily_analyses.append({
                 'day_number': day + 1,
                 'date': day_start.date(),
@@ -447,14 +461,25 @@ def analyze_daily_metrics(rr_intervals, start_datetime, user_profile, activities
     return daily_analyses
 
 def get_activities_for_period(activities, start_time, end_time):
-    """Filtra le attività per il periodo specificato"""
+    """Filtra le attività per il periodo specificato - AGGIUNTO DEBUG"""
     period_activities = []
-    for activity in activities:
+    
+    # DEBUG
+    print(f"DEBUG FILTER: Periodo richiesto: {start_time} -> {end_time}")
+    
+    for i, activity in enumerate(activities):
         activity_start = activity['start_time']
         activity_end = activity_start + timedelta(minutes=activity['duration'])
         
+        # DEBUG per ogni attività
+        print(f"DEBUG FILTER: Attività {i}: {activity['name']} - {activity_start} -> {activity_end}")
+        print(f"DEBUG FILTER:   Rientra nel periodo? {activity_start <= end_time and activity_end >= start_time}")
+        
         if (activity_start <= end_time and activity_end >= start_time):
             period_activities.append(activity)
+            print(f"DEBUG FILTER:   ✅ AGGIUNTA al periodo")
+    
+    print(f"DEBUG FILTER: Trovate {len(period_activities)} attività nel periodo")
     return period_activities
 
 # =============================================================================
@@ -672,8 +697,12 @@ def edit_activity_interface():
                 st.rerun()
 
 def save_activity(activity_type, name, intensity, food_items, start_date, start_time, duration, notes):
-    """Salva una nuova attività - VERSIONE CORRETTA"""
+    """Salva una nuova attività - CORREZIONE FUSO ORARIO"""
+    # Combina data e ora e forza il timezone locale
     start_datetime = datetime.combine(start_date, start_time)
+    
+    # DEBUG: Verifica cosa stiamo salvando
+    print(f"DEBUG SAVE: Data: {start_date}, Ora: {start_time}, DateTime: {start_datetime}")
     
     activity = {
         'type': activity_type,
@@ -691,11 +720,17 @@ def save_activity(activity_type, name, intensity, food_items, start_date, start_
     
     if len(st.session_state.activities) > 50:
         st.session_state.activities = st.session_state.activities[-50:]
+    
+    # DEBUG: Verifica cosa è stato salvato
+    print(f"DEBUG SAVE: Attività salvata: {activity['name']} - {activity['start_time']}")
 
 def update_activity(index, activity_type, name, intensity, food_items, start_date, start_time, duration, notes):
-    """Aggiorna un'attività esistente - VERSIONE CORRETTA"""
+    """Aggiorna un'attività esistente - CORREZIONE FUSO ORARIO"""
     if 0 <= index < len(st.session_state.activities):
         start_datetime = datetime.combine(start_date, start_time)
+        
+        # DEBUG: Verifica cosa stiamo aggiornando
+        print(f"DEBUG UPDATE: Data: {start_date}, Ora: {start_time}, DateTime: {start_datetime}")
         
         st.session_state.activities[index] = {
             'type': activity_type,
@@ -708,6 +743,9 @@ def update_activity(index, activity_type, name, intensity, food_items, start_dat
             'timestamp': datetime.now(),
             'color': ACTIVITY_COLORS.get(activity_type, "#95a5a6")
         }
+        
+        # DEBUG: Verifica cosa è stato aggiornato
+        print(f"DEBUG UPDATE: Attività aggiornata: {name} - {start_datetime}")
 
 def delete_activity(index):
     """Elimina un'attività"""
