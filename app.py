@@ -560,7 +560,7 @@ def main():
     
     init_session_state()
     
-    # CSS personalizzato
+    # CSS semplificato
     st.markdown("""
     <style>
     .main-header {
@@ -569,136 +569,87 @@ def main():
         text-align: center;
         margin-bottom: 2rem;
         font-weight: bold;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 15px;
-        color: white;
-        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-        border: none;
     }
     </style>
     """, unsafe_allow_html=True)
     
     # Header principale
     st.markdown('<h1 class="main-header">❤️ HRV Analytics ULTIMATE</h1>', unsafe_allow_html=True)
-    
+
     # =============================================================================
-    # SIDEBAR - VERSIONE PULITA
+    # SIDEBAR MOLTO SEMPLIFICATA
     # =============================================================================
     with st.sidebar:
-        st.header("👤 Profilo Paziente")
+        st.header("👤 Profilo Utente")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.session_state.user_profile['name'] = st.text_input("Nome", value=st.session_state.user_profile['name'], key="name_input")
-        with col2:
-            st.session_state.user_profile['surname'] = st.text_input("Cognome", value=st.session_state.user_profile['surname'], key="surname_input")
+        # Solo i campi essenziali
+        nome = st.text_input("Nome", value=st.session_state.user_profile['name'])
+        cognome = st.text_input("Cognome", value=st.session_state.user_profile['surname'])
         
-        # Data di nascita
-        birth_date = st.session_state.user_profile['birth_date']
-        if birth_date is None:
-            birth_date = datetime(1980, 1, 1).date()
-
-        st.session_state.user_profile['birth_date'] = st.date_input(
-            "Data di nascita", 
-            value=birth_date,
-            min_value=datetime(1900, 1, 1).date(),
-            max_value=datetime.now().date(),
-            key="birth_date_input"
-        )
-
-        if st.session_state.user_profile['birth_date']:
-            st.write(f"Data selezionata: {st.session_state.user_profile['birth_date'].strftime('%d/%m/%Y')}")
+        # Aggiorna il session state
+        st.session_state.user_profile['name'] = nome
+        st.session_state.user_profile['surname'] = cognome
         
-        st.session_state.user_profile['gender'] = st.selectbox("Sesso", ["Uomo", "Donna"], 
-                                                             index=0 if st.session_state.user_profile['gender'] == 'Uomo' else 1,
-                                                             key="gender_select")
+        # Data di nascita semplice
+        data_nascita = st.date_input("Data di nascita", 
+                                   value=st.session_state.user_profile['birth_date'] or datetime(1980, 1, 1).date())
+        st.session_state.user_profile['birth_date'] = data_nascita
         
-        if st.session_state.user_profile['birth_date']:
-            age = datetime.now().year - st.session_state.user_profile['birth_date'].year
-            if (datetime.now().month, datetime.now().day) < (st.session_state.user_profile['birth_date'].month, st.session_state.user_profile['birth_date'].day):
-                age -= 1
-            st.session_state.user_profile['age'] = age
-            st.info(f"Età: {age} anni")
+        st.write(f"Data selezionata: {data_nascita.strftime('%d/%m/%Y')}")
         
-        # PULSANTE SALVA UTENTE - SEMPLICE E VISIBILE
+        # PULSANTE SALVATAGGIO - SEMPLICE E VISIBILE
         st.divider()
         st.header("💾 Salvataggio")
         
-        if st.button("💾 SALVA UTENTE NEL DATABASE", type="primary", use_container_width=True):
-            if save_current_user():
-                st.success("✅ Utente salvato!")
+        if st.button("💾 SALVA UTENTE", type="primary", use_container_width=True):
+            if nome and cognome and data_nascita:
+                # Salva direttamente senza funzioni complesse
+                user_key = f"{nome.lower()}_{cognome.lower()}_{data_nascita.isoformat()}"
+                st.session_state.user_database[user_key] = {
+                    'profile': {
+                        'name': nome,
+                        'surname': cognome,
+                        'birth_date': data_nascita,
+                        'gender': st.session_state.user_profile['gender'],
+                        'age': datetime.now().year - data_nascita.year
+                    },
+                    'analyses': []
+                }
+                
+                # Salva su file
+                try:
+                    with open('user_database.json', 'w', encoding='utf-8') as f:
+                        json.dump(st.session_state.user_database, f, indent=2, default=str, ensure_ascii=False)
+                    st.success("✅ Utente salvato con successo!")
+                except Exception as e:
+                    st.error(f"❌ Errore salvataggio: {e}")
             else:
                 st.error("❌ Inserisci nome, cognome e data di nascita")
         
-        # DEBUG VISUALE
+        # DEBUG VISIBILE
         st.divider()
         st.header("🔧 Debug")
-        st.write(f"Nome: {st.session_state.user_profile['name']}")
-        st.write(f"Cognome: {st.session_state.user_profile['surname']}")
-        st.write(f"Data: {st.session_state.user_profile['birth_date']}")
+        st.write(f"Nome: {nome}")
+        st.write(f"Cognome: {cognome}")
+        st.write(f"Data: {data_nascita}")
         
         import os
         if os.path.exists('user_database.json'):
             st.success("✅ user_database.json ESISTE")
         else:
             st.error("❌ user_database.json NON TROVATO")
-        
-        # Solo le attività
-        create_activity_tracker()
-    
+
     # =============================================================================
     # CONTENUTO PRINCIPALE
     # =============================================================================
     
-    # Upload file
     st.header("📤 Carica File IBI")
-    uploaded_file = st.file_uploader("Carica il tuo file .txt o .csv con gli intervalli IBI", type=['txt', 'csv'], key="file_uploader")
+    uploaded_file = st.file_uploader("Carica il tuo file .txt o .csv con gli intervalli IBI", type=['txt', 'csv'])
     
     if uploaded_file is not None:
-        try:
-            content = uploaded_file.getvalue().decode('utf-8')
-            lines = content.strip().split('\n')
-            
-            rr_intervals = []
-            for line in lines:
-                if line.strip():
-                    try:
-                        rr_intervals.append(float(line.strip()))
-                    except ValueError:
-                        continue
-            
-            if len(rr_intervals) == 0:
-                st.error("❌ Nessun dato IBI valido trovato nel file")
-                return
-            
-            st.success(f"✅ File caricato con successo! {len(rr_intervals)} intervalli RR trovati")
-            
-        except Exception as e:
-            st.error(f"❌ Errore durante l'elaborazione del file: {str(e)}")
-    
+        st.success("✅ File caricato!")
     else:
-        # Schermata iniziale
-        st.info("""
-        ### 👆 Carica un file IBI per iniziare l'analisi
-        
-        **Formati supportati:** .txt, .csv
-        
-        Il file deve contenere gli intervalli IBI (Inter-Beat Intervals) in millisecondi, uno per riga.
-        
-        ### 🎯 FUNZIONALITÀ COMPLETE:
-        - ✅ **Calcoli HRV realistici** con valori fisiologici corretti
-        - ✅ **Analisi giornaliera** per registrazioni lunghe
-        - ✅ **Tracciamento attività** completo con modifica/eliminazione
-        - ✅ **Analisi alimentazione** con database nutrizionale ESPANSO
-        - ✅ **Persistenza dati** - utenti salvati automaticamente
-        """)
+        st.info("👆 Carica un file IBI per iniziare l'analisi")
 
 if __name__ == "__main__":
     main()
