@@ -2179,6 +2179,29 @@ def main():
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
+    }def main():
+    st.set_page_config(
+        page_title="HRV Analytics ULTIMATE",
+        page_icon="❤️",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    init_session_state()
+    
+    # CSS personalizzato MIGLIORATO
+    st.markdown("""
+    <style>
+    .main-header {
+        font-size: 3rem;
+        color: #3498db;
+        text-align: center;
+        margin-bottom: 2rem;
+        font-weight: bold;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
     }
     .metric-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -2229,95 +2252,80 @@ def main():
     # Header principale
     st.markdown('<h1 class="main-header">❤️ HRV Analytics ULTIMATE</h1>', unsafe_allow_html=True)
     
-# Sidebar per profilo utente e attività
-with st.sidebar:
-    st.header("👤 Profilo Paziente")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.session_state.user_profile['name'] = st.text_input("Nome", value=st.session_state.user_profile['name'], key="name_input")
-    with col2:
-        st.session_state.user_profile['surname'] = st.text_input("Cognome", value=st.session_state.user_profile['surname'], key="surname_input")
-    
-    # Data di nascita
-    birth_date = st.session_state.user_profile['birth_date']
-    if birth_date is None:
-        birth_date = datetime(1980, 1, 1).date()
-
-    st.session_state.user_profile['birth_date'] = st.date_input(
-        "Data di nascita", 
-        value=birth_date,
-        min_value=datetime(1900, 1, 1).date(),
-        max_value=datetime.now().date(),
-        key="birth_date_input"
-    )
-
-    if st.session_state.user_profile['birth_date']:
-        st.write(f"Data selezionata: {st.session_state.user_profile['birth_date'].strftime('%d/%m/%Y')}")
-    
-    st.session_state.user_profile['gender'] = st.selectbox("Sesso", ["Uomo", "Donna"], 
-                                                         index=0 if st.session_state.user_profile['gender'] == 'Uomo' else 1,
-                                                         key="gender_select")
-    
-    if st.session_state.user_profile['birth_date']:
-        age = datetime.now().year - st.session_state.user_profile['birth_date'].year
-        if (datetime.now().month, datetime.now().day) < (st.session_state.user_profile['birth_date'].month, st.session_state.user_profile['birth_date'].day):
-            age -= 1
-        st.session_state.user_profile['age'] = age
-        st.info(f"Età: {age} anni")
-    
-    # PULSANTE SALVA UTENTE - SEMPLICE E VISIBILE
-    st.divider()
-    st.header("💾 Salvataggio")
-    
-    if st.button("SALVA UTENTE NEL DATABASE", type="primary", use_container_width=True):
-        if save_current_user():
-            st.success("✅ Utente salvato!")
-        else:
-            st.error("❌ Inserisci nome, cognome e data di nascita")
-    
-    # DEBUG VISUALE
-    st.divider()
-    st.header("🔧 Debug")
-    st.write(f"Nome: {st.session_state.user_profile['name']}")
-    st.write(f"Cognome: {st.session_state.user_profile['surname']}")
-    st.write(f"Data: {st.session_state.user_profile['birth_date']}")
-    
-    import os
-    if os.path.exists('user_database.json'):
-        st.success("✅ user_database.json ESISTE")
-    else:
-        st.error("❌ user_database.json NON TROVATO")
-    
-    # Solo le attività, niente storico utenti per ora
-    create_activity_tracker()
-    create_user_history_interface()
+    # =============================================================================
+    # SIDEBAR - SPOSTATA DENTRO LA MAIN!
+    # =============================================================================
+    with st.sidebar:
+        st.header("👤 Profilo Paziente")
         
-        # Aggiungi tracker attività
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.user_profile['name'] = st.text_input("Nome", value=st.session_state.user_profile['name'], key="name_input")
+        with col2:
+            st.session_state.user_profile['surname'] = st.text_input("Cognome", value=st.session_state.user_profile['surname'], key="surname_input")
+        
+        # Data di nascita
+        birth_date = st.session_state.user_profile['birth_date']
+        if birth_date is None:
+            birth_date = datetime(1980, 1, 1).date()
+
+        st.session_state.user_profile['birth_date'] = st.date_input(
+            "Data di nascita", 
+            value=birth_date,
+            min_value=datetime(1900, 1, 1).date(),
+            max_value=datetime.now().date(),
+            key="birth_date_input"
+        )
+
+        if st.session_state.user_profile['birth_date']:
+            st.write(f"Data selezionata: {st.session_state.user_profile['birth_date'].strftime('%d/%m/%Y')}")
+        
+        st.session_state.user_profile['gender'] = st.selectbox("Sesso", ["Uomo", "Donna"], 
+                                                             index=0 if st.session_state.user_profile['gender'] == 'Uomo' else 1,
+                                                             key="gender_select")
+        
+        if st.session_state.user_profile['birth_date']:
+            age = datetime.now().year - st.session_state.user_profile['birth_date'].year
+            if (datetime.now().month, datetime.now().day) < (st.session_state.user_profile['birth_date'].month, st.session_state.user_profile['birth_date'].day):
+                age -= 1
+            st.session_state.user_profile['age'] = age
+            st.info(f"Età: {age} anni")
+        
+        # PULSANTE SALVA UTENTE
+        st.divider()
+        st.header("💾 Salvataggio")
+        
+        if st.button("SALVA UTENTE NEL DATABASE", type="primary", use_container_width=True):
+            if save_current_user():
+                st.success("✅ Utente salvato!")
+            else:
+                st.error("❌ Inserisci nome, cognome e data di nascita")
+        
+        # DEBUG VISUALE
+        st.divider()
+        st.header("🔧 Debug")
+        st.write(f"Nome: {st.session_state.user_profile['name']}")
+        st.write(f"Cognome: {st.session_state.user_profile['surname']}")
+        st.write(f"Data: {st.session_state.user_profile['birth_date']}")
+        
+        import os
+        if os.path.exists('user_database.json'):
+            st.success("✅ user_database.json ESISTE")
+        else:
+            st.error("❌ user_database.json NON TROVATO")
+        
+        # Solo le attività, niente storico utenti per ora
         create_activity_tracker()
-        
-        # Storico utenti
-        create_user_history_interface()
-      # DEBUG File System
-    st.sidebar.header("🔧 DEBUG File System")
-    import os
-    if os.path.exists('user_database.json'):
-        st.success("✅ user_database.json ESISTE")
-        file_size = os.path.getsize('user_database.json')
-        st.write(f"Dimensione: {file_size} bytes")
-    else:
-        st.error("❌ user_database.json NON TROVATO")
-        st.write("Il file sarà creato al primo salvataggio")
     
-    if st.button("🔄 Forza Salvataggio Manuale", key="force_save"):
-        success = save_user_database()
-        if success:
-            st.success("Salvataggio forzato riuscito!")
-        else:
-            st.error("Errore nel salvataggio forzato")  
+    # =============================================================================
+    # CONTENUTO PRINCIPALE - DOPO LA SIDEBAR
+    # =============================================================================
+    
     # Upload file
     st.header("📤 Carica File IBI")
     uploaded_file = st.file_uploader("Carica il tuo file .txt o .csv con gli intervalli IBI", type=['txt', 'csv'], key="file_uploader")
+    
+    # ... il resto del codice della main ...
     
     if uploaded_file is not None:
         try:
