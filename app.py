@@ -581,10 +581,11 @@ def create_activity_tracker():
         
         col1, col2 = st.columns(2)
         with col1:
-            # CORREZIONE: Usa la data corrente come default
+            # CORREZIONE: Mostra la data in formato italiano
             start_date = st.date_input("Data", value=datetime.now().date(), key="activity_date")
             start_time = st.time_input("Ora inizio", value=datetime.now().time(), key="activity_time")
-            st.write(f"Data selezionata: {start_date.strftime('%d/%m/%Y')}")
+            # Mostra la data nel formato italiano sotto
+            st.write(f"**Data selezionata:** {start_date.strftime('%d/%m/%Y')}")
         with col2:
             duration = st.number_input("Durata (min)", min_value=1, max_value=480, value=30, key="activity_duration")
         
@@ -595,7 +596,7 @@ def create_activity_tracker():
             st.success("Attività salvata!")
             st.rerun()
     
-    # Gestione attività esistenti
+    # Gestione attività esistenti - CORREZIONE: mostra data completa
     if st.session_state.activities:
         st.sidebar.subheader("📋 Gestione Attività")
         
@@ -652,7 +653,8 @@ def edit_activity_interface():
         with col1:
             start_date = st.date_input("Data", value=activity['start_time'].date(), key="edit_date")
             start_time = st.time_input("Ora inizio", value=activity['start_time'].time(), key="edit_time")
-            st.write(f"Data selezionata: {start_date.strftime('%d/%m/%Y')}")
+            # CORREZIONE: Mostra la data in formato italiano
+            st.write(f"**Data selezionata:** {start_date.strftime('%d/%m/%Y')}")
         with col2:
             duration = st.number_input("Durata (min)", min_value=1, max_value=480, value=activity['duration'], key="edit_duration")
         
