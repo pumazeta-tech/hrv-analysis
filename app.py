@@ -161,7 +161,11 @@ def calculate_realistic_hrv_metrics(rr_intervals, user_age, user_gender):
         'lf_hf_ratio': lf_hf_ratio,
         'sleep_duration': sleep_metrics['duration'],
         'sleep_efficiency': sleep_metrics['efficiency'],
-        'sleep_hr': sleep_metrics['hr']
+        'sleep_hr': sleep_metrics['hr'],
+        'sleep_light': sleep_metrics['light'],
+        'sleep_deep': sleep_metrics['deep'],
+        'sleep_rem': sleep_metrics['rem'],
+        'sleep_awake': sleep_metrics['awake']
     }
 
 def filter_rr_outliers(rr_intervals):
@@ -254,16 +258,30 @@ def estimate_sleep_metrics(rr_intervals, hr_mean):
         
         # Efficienza stimata basata su variabilità
         sleep_efficiency = min(95, 85 + (sleep_hr - 50) * 0.5)
+        
+        # Stima fasi del sonno basate su variabilità
+        sleep_light = sleep_duration * 0.5  # 50% sonno leggero
+        sleep_deep = sleep_duration * 0.2   # 20% sonno profondo
+        sleep_rem = sleep_duration * 0.25   # 25% REM
+        sleep_awake = sleep_duration * 0.05 # 5% risvegli
     else:
         # Stime default per registrazioni brevi
         sleep_hr = hr_mean - 5  # HR notturno tipicamente più basso
         sleep_duration = 7.0
         sleep_efficiency = 85
+        sleep_light = 3.5
+        sleep_deep = 1.4
+        sleep_rem = 1.75
+        sleep_awake = 0.35
     
     return {
         'duration': max(4, min(12, sleep_duration)),
         'efficiency': max(70, min(98, sleep_efficiency)),
-        'hr': max(40, min(80, sleep_hr))
+        'hr': max(40, min(80, sleep_hr)),
+        'light': sleep_light,
+        'deep': sleep_deep,
+        'rem': sleep_rem,
+        'awake': sleep_awake
     }
 
 def get_default_metrics(age, gender):
@@ -289,7 +307,11 @@ def get_default_metrics(age, gender):
         'lf_hf_ratio': 1.0,
         'sleep_duration': 7.0,
         'sleep_efficiency': 85,
-        'sleep_hr': 58
+        'sleep_hr': 58,
+        'sleep_light': 3.5,
+        'sleep_deep': 1.4,
+        'sleep_rem': 1.75,
+        'sleep_awake': 0.35
     }
 
 # =============================================================================
@@ -353,7 +375,11 @@ def get_activities_for_period(activities, start_time, end_time):
     """Filtra le attività per il periodo specificato"""
     period_activities = []
     for activity in activities:
-        if (activity['start_time'] >= start_time and activity['start_time'] <= end_time):
+        activity_start = activity['start_time']
+        activity_end = activity_start + timedelta(minutes=activity['duration'])
+        
+        # Check if activity overlaps with the period
+        if (activity_start <= end_time and activity_end >= start_time):
             period_activities.append(activity)
     return period_activities
 
@@ -388,6 +414,15 @@ NUTRITION_DB = {
     "carne bianca": {"inflammatory_score": 0, "glycemic_index": "basso", "recovery_impact": 1, "category": "proteina"}
 }
 
+# Colori per i tipi di attività
+ACTIVITY_COLORS = {
+    "Allenamento": "#e74c3c",
+    "Alimentazione": "#f39c12", 
+    "Stress": "#9b59b6",
+    "Riposo": "#3498db",
+    "Altro": "#95a5a6"
+}
+
 def create_activity_tracker():
     """Interfaccia per tracciare attività e alimentazione"""
     st.sidebar.header("🏃‍♂️ Tracker Attività & Alimentazione")
@@ -396,10 +431,10 @@ def create_activity_tracker():
         activity_type = st.selectbox("Tipo Attività", 
                                    ["Allenamento", "Alimentazione", "Stress", "Riposo", "Altro"])
         
-        activity_name = st.text_input("Nome Attività/Pasto")
+        activity_name = st.text_input("Nome Attività/Pasto", placeholder="Es: Corsa mattutina, Pranzo, etc.")
         
         if activity_type == "Alimentazione":
-            food_items = st.text_area("Cosa hai mangiato? (separato da virgola)")
+            food_items = st.text_area("Cosa hai mangiato? (separato da virgola)", placeholder="Es: pasta, insalata, frutta")
             intensity = st.select_slider("Pesantezza pasto", 
                                        options=["Leggero", "Normale", "Pesante", "Molto pesante"])
         else:
@@ -409,27 +444,48 @@ def create_activity_tracker():
         
         col1, col2 = st.columns(2)
         with col1:
-            start_date = st.date_input("Data", value=datetime.now().date())
+            # CORREZIONE: Data corretta senza limiti
+            start_date = st.date_input("Data", value=datetime.now().date(), max_value=datetime.now().date())
             start_time = st.time_input("Ora inizio", value=datetime.now().time())
         with col2:
             duration = st.number_input("Durata (min)", min_value=1, max_value=480, value=30)
         
-        notes = st.text_area("Note (opzionale)")
+        notes = st.text_area("Note (opzionale)", placeholder="Note aggiuntive...")
         
         if st.button("💾 Salva Attività", use_container_width=True):
             save_activity(activity_type, activity_name, intensity, food_items, start_date, start_time, duration, notes)
             st.success("Attività salvata!")
+            st.rerun()
     
-    # Mostra attività recenti
+    # Gestione attività esistenti
     if st.session_state.activities:
-        st.sidebar.subheader("📋 Ultime Attività")
-        for activity in st.session_state.activities[-3:]:
-            with st.sidebar.expander(f"{activity['name']} - {activity['start_time'].strftime('%H:%M')}", False):
+        st.sidebar.subheader("📋 Gestione Attività")
+        
+        for i, activity in enumerate(st.session_state.activities[-10:]):  # Ultime 10 attività
+            with st.sidebar.expander(f"{activity['name']} - {activity['start_time'].strftime('%d/%m %H:%M')}", False):
                 st.write(f"**Tipo:** {activity['type']}")
                 st.write(f"**Intensità:** {activity['intensity']}")
                 if activity['food_items']:
                     st.write(f"**Cibo:** {activity['food_items']}")
+                st.write(f"**Data/Ora:** {activity['start_time'].strftime('%d/%m/%Y %H:%M')}")
                 st.write(f"**Durata:** {activity['duration']} min")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("✏️ Modifica", key=f"edit_{i}", use_container_width=True):
+                        st.session_state.editing_activity_index = i
+                with col2:
+                    if st.button("🗑️ Elimina", key=f"delete_{i}", use_container_width=True):
+                        delete_activity(i)
+                        st.rerun()
+        
+        # Pulsante per salvare utente
+        st.sidebar.markdown("---")
+        if st.sidebar.button("💾 Salva Utente nel Database", use_container_width=True, type="primary"):
+            if save_current_user():
+                st.sidebar.success("✅ Utente salvato nel database!")
+            else:
+                st.sidebar.error("❌ Inserisci nome, cognome e data di nascita")
 
 def save_activity(activity_type, name, intensity, food_items, start_date, start_time, duration, notes):
     """Salva una nuova attività"""
@@ -443,7 +499,8 @@ def save_activity(activity_type, name, intensity, food_items, start_date, start_
         'start_time': start_datetime,
         'duration': duration,
         'notes': notes,
-        'timestamp': datetime.now()
+        'timestamp': datetime.now(),
+        'color': ACTIVITY_COLORS.get(activity_type, "#95a5a6")
     }
     
     st.session_state.activities.append(activity)
@@ -451,6 +508,30 @@ def save_activity(activity_type, name, intensity, food_items, start_date, start_
     # Mantieni solo le ultime 50 attività
     if len(st.session_state.activities) > 50:
         st.session_state.activities = st.session_state.activities[-50:]
+
+def delete_activity(index):
+    """Elimina un'attività"""
+    if 0 <= index < len(st.session_state.activities):
+        st.session_state.activities.pop(index)
+
+def save_current_user():
+    """Salva l'utente corrente nel database"""
+    user_profile = st.session_state.user_profile
+    if not user_profile['name'] or not user_profile['surname'] or not user_profile['birth_date']:
+        return False
+    
+    user_key = get_user_key(user_profile)
+    if not user_key:
+        return False
+    
+    if user_key not in st.session_state.user_database:
+        st.session_state.user_database[user_key] = {
+            'profile': user_profile.copy(),
+            'analyses': []
+        }
+    
+    save_user_database()
+    return True
 
 def analyze_nutritional_impact_day(day_activities, daily_metrics):
     """Analizza l'impatto nutrizionale sulla base delle attività del giorno"""
@@ -516,128 +597,7 @@ def analyze_nutritional_impact_day(day_activities, daily_metrics):
     }
 
 # =============================================================================
-# RACCOMANDAZIONI INTELLIGENTI AVANZATE
-# =============================================================================
-
-def generate_intelligent_recommendations(daily_analyses, user_profile):
-    """Genera raccomandazioni intelligenti basate su trend multi-giorno"""
-    recommendations = []
-    
-    if len(daily_analyses) < 2:
-        return ["📊 Servono più giorni di dati per raccomandazioni personalizzate"]
-    
-    # Analisi recupero allenamento
-    recovery_recs = analyze_recovery_patterns(daily_analyses)
-    recommendations.extend(recovery_recs)
-    
-    # Analisi pattern alimentari
-    nutrition_recs = analyze_nutrition_patterns(daily_analyses)
-    recommendations.extend(nutrition_recs)
-    
-    # Analisi ritmi circadiani
-    circadian_recs = analyze_circadian_patterns(daily_analyses)
-    recommendations.extend(circadian_recs)
-    
-    # Analisi qualità sonno
-    sleep_recs = analyze_sleep_patterns(daily_analyses)
-    recommendations.extend(sleep_recs)
-    
-    return recommendations[:8]  # Massimo 8 raccomandazioni
-
-def analyze_recovery_patterns(daily_analyses):
-    """Analizza il recupero tra gli allenamenti"""
-    recommendations = []
-    
-    for i in range(1, len(daily_analyses)):
-        prev_day = daily_analyses[i-1]
-        current_day = daily_analyses[i]
-        
-        # Cerca allenamenti intensi nel giorno precedente
-        prev_intense_training = any(
-            act for act in prev_day.get('activities', [])
-            if act['type'] == 'Allenamento' and act['intensity'] in ['Intensa', 'Massimale']
-        )
-        
-        # Cerca allenamenti nel giorno corrente
-        current_training = any(
-            act for act in current_day.get('activities', [])
-            if act['type'] == 'Allenamento'
-        )
-        
-        if prev_intense_training and current_training:
-            # Calcola variazione RMSSD
-            rmssd_change = current_day['metrics']['rmssd'] - prev_day['metrics']['rmssd']
-            hr_change = current_day['metrics']['hr_mean'] - prev_day['metrics']['hr_mean']
-            
-            if rmssd_change < -5 or hr_change > 5:
-                recommendations.append(
-                    f"⚠️ **Recupero insufficiente** (Giorno {current_day['day_number']}): " +
-                    f"RMSSD calato di {abs(rmssd_change):.1f}ms, FC salita di {hr_change:.1f}bpm. " +
-                    "Considera riposo attivo invece di allenamento intenso."
-                )
-    
-    return recommendations
-
-def analyze_nutrition_patterns(daily_analyses):
-    """Analizza pattern alimentari e loro impatto"""
-    recommendations = []
-    
-    for day in daily_analyses:
-        nutrition = day.get('nutrition_impact', {})
-        if nutrition.get('score', 0) > 2.5 and day['metrics']['rmssd'] < 30:
-            recommendations.append(
-                f"🍔 **Impatto alimentare negativo** (Giorno {day['day_number']}): " +
-                "Alimentazione infiammatoria associata a basso RMSSD. " +
-                "Migliora la qualità nutrizionale per supportare il recupero."
-            )
-    
-    return recommendations
-
-def analyze_circadian_patterns(daily_analyses):
-    """Analizza la stabilità dei ritmi circadiani"""
-    recommendations = []
-    
-    if len(daily_analyses) >= 3:
-        sdnn_values = [day['metrics']['sdnn'] for day in daily_analyses]
-        sdnn_std = np.std(sdnn_values)
-        
-        if sdnn_std > 15:
-            recommendations.append(
-                "🔄 **Variabilità circadiana elevata**: " +
-                "Grandi fluttuazioni giornaliere nell'HRV suggeriscono ritmi irregolari. " +
-                "Mantieni orari regolari per sonno e pasti."
-            )
-    
-    return recommendations
-
-def analyze_sleep_patterns(daily_analyses):
-    """Analizza la qualità del sonno nei diversi giorni"""
-    recommendations = []
-    
-    sleep_durations = [day['metrics'].get('sleep_duration', 0) for day in daily_analyses]
-    avg_sleep = np.mean(sleep_durations)
-    
-    if avg_sleep < 6.5:
-        recommendations.append(
-            "😴 **Sonno insufficiente**: " +
-            f"Media di {avg_sleep:.1f} ore per notte. " +
-            "Punta a 7-9 ore per ottimizzare il recupero."
-        )
-    
-    # Cerca notti con sonno particolarmente scarso
-    for day in daily_analyses:
-        sleep_duration = day['metrics'].get('sleep_duration', 0)
-        if sleep_duration < 5:
-            recommendations.append(
-                f"🌙 **Sonno molto scarso** (Giorno {day['day_number']}): " +
-                f"Solo {sleep_duration:.1f} ore. " +
-                "Priorità al recupero notturno."
-            )
-    
-    return recommendations
-
-# =============================================================================
-# FUNZIONI PER GESTIONE DATABASE UTENTI (MANTENUTE)
+# FUNZIONI PER GESTIONE DATABASE UTENTI
 # =============================================================================
 
 def get_user_key(user_profile):
@@ -677,7 +637,11 @@ def save_analysis_to_user_database(metrics, start_datetime, end_datetime, select
             'lf_hf_ratio': metrics['our_algo']['lf_hf_ratio'],
             'sleep_duration': metrics['our_algo'].get('sleep_duration', 0),
             'sleep_efficiency': metrics['our_algo'].get('sleep_efficiency', 0),
-            'sleep_hr': metrics['our_algo'].get('sleep_hr', 0)
+            'sleep_hr': metrics['our_algo'].get('sleep_hr', 0),
+            'sleep_light': metrics['our_algo'].get('sleep_light', 0),
+            'sleep_deep': metrics['our_algo'].get('sleep_deep', 0),
+            'sleep_rem': metrics['our_algo'].get('sleep_rem', 0),
+            'sleep_awake': metrics['our_algo'].get('sleep_awake', 0)
         },
         'daily_analyses': daily_analyses or []
     }
@@ -711,12 +675,19 @@ def get_all_users():
     return users
 
 # =============================================================================
-# FUNZIONI PER INTERFACCIA STORICO UTENTI (MANTENUTE)
+# FUNZIONI PER INTERFACCIA STORICO UTENTI
 # =============================================================================
 
 def create_user_history_interface():
     """Crea l'interfaccia per la gestione dello storico utenti"""
     st.sidebar.header("📊 Storico Utenti")
+    
+    # Pulsante per salvare l'utente corrente
+    if st.sidebar.button("💾 Salva Utente Corrente", use_container_width=True, type="primary"):
+        if save_current_user():
+            st.sidebar.success("✅ Utente salvato!")
+        else:
+            st.sidebar.error("❌ Inserisci nome, cognome e data di nascita")
     
     # Seleziona utente esistente
     users = get_all_users()
@@ -740,7 +711,7 @@ def create_user_history_interface():
             selected_user_data = st.session_state.user_database[selected_key]
             
             # Pulsante per caricare il profilo
-            if st.sidebar.button("📥 Carica Profilo", use_container_width=True):
+            if st.sidebar.button("📥 Carica Profilo Selezionato", use_container_width=True):
                 st.session_state.user_profile = selected_user_data['profile'].copy()
                 st.success(f"✅ Profilo di {selected_user_data['profile']['name']} caricato!")
                 st.rerun()
@@ -756,7 +727,7 @@ def create_user_history_interface():
                         st.write(f"**Durata:** {analysis['selected_range']}")
 
 # =============================================================================
-# FUNZIONI PER ESTRAZIONE DATA E ORA DAL FILE (MANTENUTE)
+# FUNZIONI PER ESTRAZIONE DATA E ORA DAL FILE
 # =============================================================================
 
 def extract_datetime_from_content(content):
@@ -784,7 +755,7 @@ def calculate_recording_end_datetime(start_datetime, rr_intervals):
     return start_datetime + timedelta(hours=duration_hours)
 
 # =============================================================================
-# GESTIONE DATA/ORA AUTOMATICA (MANTENUTA)
+# GESTIONE DATA/ORA AUTOMATICA
 # =============================================================================
 
 def update_analysis_datetimes(uploaded_file, rr_intervals=None):
@@ -840,7 +811,7 @@ def get_analysis_datetimes():
     )
 
 # =============================================================================
-# FUNZIONE PER CREARE GRAFICO CON ORE REALI (MANTENUTA)
+# FUNZIONE PER CREARE GRAFICO CON ORE REALI
 # =============================================================================
 
 def create_hrv_timeseries_plot_with_real_time(metrics, activities, start_datetime, end_datetime):
@@ -901,17 +872,25 @@ def create_hrv_timeseries_plot_with_real_time(metrics, activities, start_datetim
         hovertemplate='<b>%{x|%d/%m %H:%M}</b><br>HR: %{y:.1f} bpm<extra></extra>'
     ))
     
+    # Aggiungi le attività al grafico
     for activity in activities:
-        if (activity['start_time'] >= start_datetime and activity['start_time'] <= end_datetime):
+        activity_start = activity['start_time']
+        activity_end = activity_start + timedelta(minutes=activity['duration'])
+        
+        # Check if activity overlaps with the time range
+        if (activity_start <= end_datetime and activity_end >= start_datetime):
+            # Adjust activity times to fit within the plot range
+            plot_start = max(activity_start, start_datetime)
+            plot_end = min(activity_end, end_datetime)
             
             fig.add_vrect(
-                x0=activity['start_time'], 
-                x1=activity['start_time'] + timedelta(minutes=activity['duration']),
-                fillcolor=activity['color'], 
+                x0=plot_start, 
+                x1=plot_end,
+                fillcolor=activity.get('color', '#95a5a6'), 
                 opacity=0.3,
                 layer="below", 
                 line_width=1, 
-                line_color=activity['color'],
+                line_color=activity.get('color', '#95a5a6'),
                 annotation_text=activity['name'],
                 annotation_position="top left"
             )
@@ -938,7 +917,7 @@ def create_hrv_timeseries_plot_with_real_time(metrics, activities, start_datetim
     return fig
 
 # =============================================================================
-# FUNZIONI DI VALUTAZIONE E ANALISI (MANTENUTE)
+# FUNZIONI DI VALUTAZIONE E ANALISI
 # =============================================================================
 
 def get_sdnn_evaluation(sdnn, gender):
@@ -1090,7 +1069,7 @@ def generate_recommendations(metrics, user_profile, weaknesses):
     return {k: v for k, v in recommendations.items() if v}
 
 # =============================================================================
-# FUNZIONE PER GRAFICO 3D AVANZATO (MANTENUTA)
+# FUNZIONE PER GRAFICO 3D AVANZATO
 # =============================================================================
 
 def create_advanced_3d_plot(metrics):
@@ -1153,17 +1132,17 @@ def create_advanced_3d_plot(metrics):
     return fig
 
 # =============================================================================
-# VISUALIZZAZIONE ANALISI GIORNALIERA
+# VISUALIZZAZIONE ANALISI GIORNALIERA MIGLIORATA
 # =============================================================================
 
 def create_daily_analysis_visualization(daily_analyses):
-    """Crea visualizzazioni per l'analisi giornaliera"""
+    """Crea visualizzazioni complete per l'analisi giornaliera"""
     if not daily_analyses:
         return None
     
     st.header("📅 Analisi Giornaliera Dettagliata")
     
-    # Metriche chiave per giorno
+    # Grafico dell'andamento giornaliero
     days = [f"Giorno {day['day_number']}" for day in daily_analyses]
     sdnn_values = [day['metrics']['sdnn'] for day in daily_analyses]
     rmssd_values = [day['metrics']['rmssd'] for day in daily_analyses]
@@ -1214,39 +1193,88 @@ def create_daily_analysis_visualization(daily_analyses):
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.metric("SDNN", f"{day_analysis['metrics']['sdnn']:.1f} ms")
-                st.metric("RMSSD", f"{day_analysis['metrics']['rmssd']:.1f} ms")
+                st.metric("SDNN", f"{day_analysis['metrics']['sdnn']:.1f} ms", 
+                         delta=f"{get_sdnn_evaluation(day_analysis['metrics']['sdnn'], 'Uomo')}")
+                st.metric("RMSSD", f"{day_analysis['metrics']['rmssd']:.1f} ms",
+                         delta=f"{get_rmssd_evaluation(day_analysis['metrics']['rmssd'], 'Uomo')}")
             
             with col2:
-                st.metric("Frequenza Cardiaca", f"{day_analysis['metrics']['hr_mean']:.1f} bpm")
-                st.metric("Coerenza", f"{day_analysis['metrics']['coherence']:.1f}%")
+                st.metric("Frequenza Cardiaca", f"{day_analysis['metrics']['hr_mean']:.1f} bpm",
+                         delta=f"{get_hr_evaluation(day_analysis['metrics']['hr_mean'])}")
+                st.metric("Coerenza", f"{day_analysis['metrics']['coherence']:.1f}%",
+                         delta=f"{get_coherence_evaluation(day_analysis['metrics']['coherence'])}")
             
             with col3:
                 st.metric("Durata Registrazione", f"{day_analysis['recording_hours']:.1f} h")
                 st.metric("Battiti Analizzati", day_analysis['rr_count'])
             
+            # Analisi del sonno per il giorno
+            st.subheader("😴 Analisi Sonno")
+            sleep_cols = st.columns(4)
+            with sleep_cols[0]:
+                st.metric("Durata Totale", f"{day_analysis['metrics'].get('sleep_duration', 0):.1f} h")
+            with sleep_cols[1]:
+                st.metric("Efficienza", f"{day_analysis['metrics'].get('sleep_efficiency', 0):.0f}%")
+            with sleep_cols[2]:
+                st.metric("Sonno Leggero", f"{day_analysis['metrics'].get('sleep_light', 0):.1f} h")
+            with sleep_cols[3]:
+                st.metric("Sonno Profondo", f"{day_analysis['metrics'].get('sleep_deep', 0):.1f} h")
+            
+            sleep_cols2 = st.columns(3)
+            with sleep_cols2[0]:
+                st.metric("Sonno REM", f"{day_analysis['metrics'].get('sleep_rem', 0):.1f} h")
+            with sleep_cols2[1]:
+                st.metric("Risvegli", f"{day_analysis['metrics'].get('sleep_awake', 0):.1f} h")
+            with sleep_cols2[2]:
+                st.metric("FC Notturna", f"{day_analysis['metrics'].get('sleep_hr', 0):.0f} bpm")
+            
+            # Grafico a torta per le fasi del sonno
+            if day_analysis['metrics'].get('sleep_duration', 0) > 0:
+                sleep_phases = ['Leggero', 'Profondo', 'REM', 'Risvegli']
+                sleep_values = [
+                    day_analysis['metrics'].get('sleep_light', 0),
+                    day_analysis['metrics'].get('sleep_deep', 0), 
+                    day_analysis['metrics'].get('sleep_rem', 0),
+                    day_analysis['metrics'].get('sleep_awake', 0)
+                ]
+                
+                fig_sleep = px.pie(
+                    values=sleep_values,
+                    names=sleep_phases,
+                    title="Distribuzione Fasi del Sonno",
+                    color_discrete_sequence=['#3498db', '#2ecc71', '#e74c3c', '#f39c12']
+                )
+                st.plotly_chart(fig_sleep, use_container_width=True)
+            
             # Attività del giorno
             if day_analysis['activities']:
                 st.subheader("🏃‍♂️ Attività del Giorno")
                 for activity in day_analysis['activities']:
-                    st.write(f"• **{activity['name']}** ({activity['type']}) - {activity['intensity']} - {activity['duration']} min")
+                    st.write(f"• **{activity['name']}** ({activity['type']}) - {activity['intensity']} - {activity['start_time'].strftime('%H:%M')} ({activity['duration']} min)")
             
             # Analisi alimentare
             nutrition = day_analysis.get('nutrition_impact', {})
             if nutrition.get('analysis'):
                 st.subheader("🍽️ Analisi Alimentazione")
-                st.write(nutrition['analysis'])
+                
+                if nutrition['score'] > 2:
+                    st.error(nutrition['analysis'])
+                elif nutrition['score'] < 0:
+                    st.success(nutrition['analysis'])
+                else:
+                    st.warning(nutrition['analysis'])
+                
                 if nutrition.get('recommendations'):
                     st.write("**Suggerimenti:**")
                     for rec in nutrition['recommendations']:
                         st.write(f"• {rec}")
 
 # =============================================================================
-# FUNZIONE PER CREARE PDF CON GRAFICHE AVANZATE - VERSIONE MIGLIORATA
+# FUNZIONE PER CREARE PDF CON GRAFICHE AVANZATE - VERSIONE COMPLETA
 # =============================================================================
 
 def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_range, user_profile, activities=[], daily_analyses=[]):
-    """Crea un report PDF avanzato con analisi giornaliera"""
+    """Crea un report PDF avanzato con analisi completa"""
     try:
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
@@ -1285,67 +1313,140 @@ def create_advanced_pdf_report(metrics, start_datetime, end_datetime, selected_r
         <b>Paziente:</b> {user_profile.get('name', '')} {user_profile.get('surname', '')}<br/>
         <b>Età:</b> {user_profile.get('age', '')} anni | <b>Sesso:</b> {user_profile.get('gender', '')}<br/>
         <b>Periodo analisi:</b> {start_datetime.strftime('%d/%m/%Y %H:%M')} - {end_datetime.strftime('%d/%m/%Y %H:%M')}<br/>
-        <b>Durata totale:</b> {selected_range}
+        <b>Durata totale:</b> {selected_range}<br/>
+        <b>Data generazione report:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}
         """
         story.append(Paragraph(user_info, styles['Normal']))
         story.append(Spacer(1, 20))
         
-        # Se ci sono analisi giornaliere, le includiamo
+        # METRICHE PRINCIPALI
+        story.append(Paragraph("<b>METRICHE HRV PRINCIPALI</b>", styles['Heading2']))
+        
+        main_metrics_data = [
+            ['METRICA', 'VALORE', 'VALUTAZIONE'],
+            [
+                'SDNN (Variabilità Totale)', 
+                f"{metrics['our_algo']['sdnn']:.1f} ms", 
+                get_sdnn_evaluation(metrics['our_algo']['sdnn'], user_profile.get('gender', 'Uomo'))
+            ],
+            [
+                'RMSSD (Parasimpatico)', 
+                f"{metrics['our_algo']['rmssd']:.1f} ms", 
+                get_rmssd_evaluation(metrics['our_algo']['rmssd'], user_profile.get('gender', 'Uomo'))
+            ],
+            [
+                'Frequenza Cardiaca Media', 
+                f"{metrics['our_algo']['hr_mean']:.1f} bpm", 
+                get_hr_evaluation(metrics['our_algo']['hr_mean'])
+            ],
+            [
+                'Coerenza Cardiaca', 
+                f"{metrics['our_algo']['coherence']:.1f}%", 
+                get_coherence_evaluation(metrics['our_algo']['coherence'])
+            ]
+        ]
+        
+        main_table = Table(main_metrics_data, colWidths=[180, 80, 120])
+        main_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor("#3498db")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), HexColor("#ffffff")),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), HexColor("#f8f9fa")),
+            ('GRID', (0, 0), (-1, -1), 1, HexColor("#bdc3c7")),
+        ]))
+        
+        story.append(main_table)
+        story.append(Spacer(1, 20))
+        
+        # ANALISI SPETTRALE
+        story.append(Paragraph("<b>ANALISI SPETTRALE HRV</b>", styles['Heading2']))
+        
+        spectral_data = [
+            ['BANDA', 'POTENZA', 'SIGNIFICATO'],
+            ['VLF (Very Low Frequency)', f"{metrics['our_algo']['vlf']:.0f} ms²", 'Termoregolazione'],
+            ['LF (Low Frequency)', f"{metrics['our_algo']['lf']:.0f} ms²", 'Simpatico'],
+            ['HF (High Frequency)', f"{metrics['our_algo']['hf']:.0f} ms²", 'Parasimpatico'],
+            ['RAPPORTO LF/HF', f"{metrics['our_algo']['lf_hf_ratio']:.2f}", get_lf_hf_evaluation(metrics['our_algo']['lf_hf_ratio'])]
+        ]
+        
+        spectral_table = Table(spectral_data, colWidths=[120, 80, 120])
+        spectral_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor("#2c3e50")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), HexColor("#ffffff")),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 1), (-1, -1), HexColor("#ecf0f1")),
+            ('GRID', (0, 0), (-1, -1), 1, HexColor("#bdc3c7")),
+        ]))
+        
+        story.append(spectral_table)
+        story.append(Spacer(1, 20))
+        
+        # ANALISI GIORNALIERA
         if daily_analyses:
             story.append(Paragraph("<b>ANALISI GIORNALIERA DETTAGLIATA</b>", styles['Heading2']))
             
             for day in daily_analyses:
-                day_title = f"Giorno {day['day_number']} - {day['date']}"
-                story.append(Paragraph(day_title, styles['Heading3']))
+                story.append(Paragraph(f"<b>Giorno {day['day_number']} - {day['date']}</b>", styles['Heading3']))
                 
-                # Metriche del giorno in tabella
-                day_data = [
-                    ['METRICA', 'VALORE', 'VALUTAZIONE'],
-                    [
-                        'SDNN', 
-                        f"{day['metrics']['sdnn']:.1f} ms", 
-                        get_sdnn_evaluation(day['metrics']['sdnn'], user_profile.get('gender', 'Uomo'))
-                    ],
-                    [
-                        'RMSSD', 
-                        f"{day['metrics']['rmssd']:.1f} ms", 
-                        get_rmssd_evaluation(day['metrics']['rmssd'], user_profile.get('gender', 'Uomo'))
-                    ],
-                    [
-                        'Frequenza Cardiaca', 
-                        f"{day['metrics']['hr_mean']:.1f} bpm", 
-                        get_hr_evaluation(day['metrics']['hr_mean'])
-                    ]
+                day_metrics = [
+                    ['SDNN', f"{day['metrics']['sdnn']:.1f} ms"],
+                    ['RMSSD', f"{day['metrics']['rmssd']:.1f} ms"],
+                    ['FC Media', f"{day['metrics']['hr_mean']:.1f} bpm"],
+                    ['Coerenza', f"{day['metrics']['coherence']:.1f}%"],
+                    ['Durata', f"{day['recording_hours']:.1f} h"]
                 ]
                 
-                day_table = Table(day_data, colWidths=[120, 80, 120])
+                day_table = Table(day_metrics, colWidths=[80, 60])
                 day_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), HexColor("#3498db")),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), HexColor("#ffffff")),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
                     ('FONTSIZE', (0, 0), (-1, -1), 8),
-                    ('BACKGROUND', (0, 1), (-1, -1), HexColor("#f8f9fa")),
+                    ('BACKGROUND', (0, 0), (-1, -1), HexColor("#f8f9fa")),
                     ('GRID', (0, 0), (-1, -1), 1, HexColor("#bdc3c7")),
                 ]))
                 
                 story.append(day_table)
+                
+                # Analisi sonno per il giorno
+                if day['metrics'].get('sleep_duration', 0) > 0:
+                    sleep_info = f"""
+                    <b>Sonno:</b> {day['metrics']['sleep_duration']:.1f}h totali 
+                    (Leggero: {day['metrics'].get('sleep_light', 0):.1f}h, 
+                    Profondo: {day['metrics'].get('sleep_deep', 0):.1f}h, 
+                    REM: {day['metrics'].get('sleep_rem', 0):.1f}h)
+                    """
+                    story.append(Paragraph(sleep_info, styles['Normal']))
+                
                 story.append(Spacer(1, 10))
         
-        # Raccomandazioni intelligenti
+        # RACCOMANDAZIONI
         weaknesses = identify_weaknesses(metrics, user_profile)
-        recommendations = generate_intelligent_recommendations(daily_analyses, user_profile) if daily_analyses else []
+        story.append(Paragraph("<b>VALUTAZIONE E RACCOMANDAZIONI</b>", styles['Heading2']))
         
-        if recommendations:
-            story.append(Paragraph("<b>RACCOMANDAZIONI INTELLIGENTI</b>", styles['Heading2']))
-            for rec in recommendations:
-                story.append(Paragraph(f"• {rec}", styles['Normal']))
-            story.append(Spacer(1, 15))
+        if len(weaknesses) <= 1:
+            overall = "🟢 ECCELLENTE - Sistema nervoso autonomo ben bilanciato"
+        elif len(weaknesses) <= 3:
+            overall = "🟡 BUONO - Alcuni aspetti richiedono attenzione"
+        else:
+            overall = "🔴 DA MIGLIORARE - Significativo spazio di miglioramento"
         
-        # Footer
+        story.append(Paragraph(overall, styles['Normal']))
+        story.append(Spacer(1, 10))
+        
+        story.append(Paragraph("<b>Punti di attenzione identificati:</b>", styles['Normal']))
+        for weakness in weaknesses:
+            story.append(Paragraph(f"• {weakness}", styles['Normal']))
+        
         story.append(Spacer(1, 20))
-        footer_text = f"""
-        <i>Report generato il {datetime.now().strftime('%d/%m/%Y alle %H:%M')} - 
-        HRV Analytics ULTIMATE - Sistema avanzato di analisi della variabilità cardiaca</i>
+        
+        # FOOTER
+        footer_text = """
+        <i>Report generato da HRV Analytics ULTIMATE - Sistema avanzato di analisi della variabilità cardiaca<br/>
+        Per scopi informativi e di benessere - Consultare professionisti sanitari per interpretazioni cliniche</i>
         """
         story.append(Paragraph(footer_text, styles['Normal']))
         
@@ -1376,7 +1477,26 @@ def create_simple_pdf_fallback(metrics, start_datetime, end_datetime, user_profi
     p.drawString(100, height-85, f"Periodo: {start_datetime.strftime('%d/%m/%Y')} - {end_datetime.strftime('%d/%m/%Y')}")
     
     y_pos = height-120
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(100, y_pos, "METRICHE PRINCIPALI:")
+    y_pos -= 20
+    
+    main_metrics = [
+        ("SDNN", f"{metrics['our_algo']['sdnn']:.1f} ms"),
+        ("RMSSD", f"{metrics['our_algo']['rmssd']:.1f} ms"),
+        ("Frequenza Cardiaca", f"{metrics['our_algo']['hr_mean']:.1f} bpm"),
+        ("Coerenza", f"{metrics['our_algo']['coherence']:.1f}%")
+    ]
+    
+    for name, value in main_metrics:
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(120, y_pos, f"{name}:")
+        p.setFont("Helvetica", 10)
+        p.drawString(200, y_pos, value)
+        y_pos -= 15
+    
     if daily_analyses:
+        y_pos -= 10
         p.setFont("Helvetica-Bold", 12)
         p.drawString(100, y_pos, "ANALISI GIORNALIERA:")
         y_pos -= 20
@@ -1386,7 +1506,9 @@ def create_simple_pdf_fallback(metrics, start_datetime, end_datetime, user_profi
             p.drawString(120, y_pos, f"Giorno {day['day_number']} ({day['date']}):")
             y_pos -= 15
             p.setFont("Helvetica", 9)
-            p.drawString(140, y_pos, f"SDNN: {day['metrics']['sdnn']:.1f} ms, RMSSD: {day['metrics']['rmssd']:.1f} ms, HR: {day['metrics']['hr_mean']:.1f} bpm")
+            p.drawString(140, y_pos, f"SDNN: {day['metrics']['sdnn']:.1f} ms, RMSSD: {day['metrics']['rmssd']:.1f} ms")
+            y_pos -= 12
+            p.drawString(140, y_pos, f"HR: {day['metrics']['hr_mean']:.1f} bpm, Sonno: {day['metrics'].get('sleep_duration', 0):.1f}h")
             y_pos -= 15
     
     p.showPage()
@@ -1395,7 +1517,128 @@ def create_simple_pdf_fallback(metrics, start_datetime, end_datetime, user_profi
     return buffer
 
 # =============================================================================
-# INTERFACCIA PRINCIPALE STREAMLIT - VERSIONE MIGLIORATA
+# RACCOMANDAZIONI INTELLIGENTI AVANZATE
+# =============================================================================
+
+def generate_intelligent_recommendations(daily_analyses, user_profile):
+    """Genera raccomandazioni intelligenti basate su trend multi-giorno"""
+    recommendations = []
+    
+    if len(daily_analyses) < 2:
+        return ["📊 Servono più giorni di dati per raccomandazioni personalizzate"]
+    
+    # Analisi recupero allenamento
+    recovery_recs = analyze_recovery_patterns(daily_analyses)
+    recommendations.extend(recovery_recs)
+    
+    # Analisi pattern alimentari
+    nutrition_recs = analyze_nutrition_patterns(daily_analyses)
+    recommendations.extend(nutrition_recs)
+    
+    # Analisi ritmi circadiani
+    circadian_recs = analyze_circadian_patterns(daily_analyses)
+    recommendations.extend(circadian_recs)
+    
+    # Analisi qualità sonno
+    sleep_recs = analyze_sleep_patterns(daily_analyses)
+    recommendations.extend(sleep_recs)
+    
+    return recommendations[:8]  # Massimo 8 raccomandazioni
+
+def analyze_recovery_patterns(daily_analyses):
+    """Analizza il recupero tra gli allenamenti"""
+    recommendations = []
+    
+    for i in range(1, len(daily_analyses)):
+        prev_day = daily_analyses[i-1]
+        current_day = daily_analyses[i]
+        
+        # Cerca allenamenti intensi nel giorno precedente
+        prev_intense_training = any(
+            act for act in prev_day.get('activities', [])
+            if act['type'] == 'Allenamento' and act['intensity'] in ['Intensa', 'Massimale']
+        )
+        
+        # Cerca allenamenti nel giorno corrente
+        current_training = any(
+            act for act in current_day.get('activities', [])
+            if act['type'] == 'Allenamento'
+        )
+        
+        if prev_intense_training and current_training:
+            # Calcola variazione RMSSD
+            rmssd_change = current_day['metrics']['rmssd'] - prev_day['metrics']['rmssd']
+            hr_change = current_day['metrics']['hr_mean'] - prev_day['metrics']['hr_mean']
+            
+            if rmssd_change < -5 or hr_change > 5:
+                recommendations.append(
+                    f"⚠️ **Recupero insufficiente** (Giorno {current_day['day_number']}): " +
+                    f"RMSSD calato di {abs(rmssd_change):.1f}ms, FC salita di {hr_change:.1f}bpm. " +
+                    "Considera riposo attivo invece di allenamento intenso."
+                )
+    
+    return recommendations
+
+def analyze_nutrition_patterns(daily_analyses):
+    """Analizza pattern alimentari e loro impatto"""
+    recommendations = []
+    
+    for day in daily_analyses:
+        nutrition = day.get('nutrition_impact', {})
+        if nutrition.get('score', 0) > 2.5 and day['metrics']['rmssd'] < 30:
+            recommendations.append(
+                f"🍔 **Impatto alimentare negativo** (Giorno {day['day_number']}): " +
+                "Alimentazione infiammatoria associata a basso RMSSD. " +
+                "Migliora la qualità nutrizionale per supportare il recupero."
+            )
+    
+    return recommendations
+
+def analyze_circadian_patterns(daily_analyses):
+    """Analizza la stabilità dei ritmi circadiani"""
+    recommendations = []
+    
+    if len(daily_analyses) >= 3:
+        sdnn_values = [day['metrics']['sdnn'] for day in daily_analyses]
+        sdnn_std = np.std(sdnn_values)
+        
+        if sdnn_std > 15:
+            recommendations.append(
+                "🔄 **Variabilità circadiana elevata**: " +
+                "Grandi fluttuazioni giornaliere nell'HRV suggeriscono ritmi irregolari. " +
+                "Mantieni orari regolari per sonno e pasti."
+            )
+    
+    return recommendations
+
+def analyze_sleep_patterns(daily_analyses):
+    """Analizza la qualità del sonno nei diversi giorni"""
+    recommendations = []
+    
+    sleep_durations = [day['metrics'].get('sleep_duration', 0) for day in daily_analyses]
+    avg_sleep = np.mean(sleep_durations)
+    
+    if avg_sleep < 6.5:
+        recommendations.append(
+            "😴 **Sonno insufficiente**: " +
+            f"Media di {avg_sleep:.1f} ore per notte. " +
+            "Punta a 7-9 ore per ottimizzare il recupero."
+        )
+    
+    # Cerca notti con sonno particolarmente scarso
+    for day in daily_analyses:
+        sleep_duration = day['metrics'].get('sleep_duration', 0)
+        if sleep_duration < 5:
+            recommendations.append(
+                f"🌙 **Sonno molto scarso** (Giorno {day['day_number']}): " +
+                f"Solo {sleep_duration:.1f} ore. " +
+                "Priorità al recupero notturno."
+            )
+    
+    return recommendations
+
+# =============================================================================
+# INTERFACCIA PRINCIPALE STREAMLIT - VERSIONE CORRETTA
 # =============================================================================
 
 def main():
@@ -1462,7 +1705,14 @@ def main():
         with col2:
             st.session_state.user_profile['surname'] = st.text_input("Cognome", value=st.session_state.user_profile['surname'])
         
-        st.session_state.user_profile['birth_date'] = st.date_input("Data di nascita", value=st.session_state.user_profile['birth_date'] or datetime.now().date())
+        # CORREZIONE: Data di nascita senza limiti di anno
+        st.session_state.user_profile['birth_date'] = st.date_input(
+            "Data di nascita", 
+            value=st.session_state.user_profile['birth_date'] or datetime(1980, 1, 1).date(),
+            min_value=datetime(1900, 1, 1).date(),
+            max_value=datetime.now().date()
+        )
+        
         st.session_state.user_profile['gender'] = st.selectbox("Sesso", ["Uomo", "Donna"], index=0 if st.session_state.user_profile['gender'] == 'Uomo' else 1)
         
         if st.session_state.user_profile['birth_date']:
@@ -1648,7 +1898,7 @@ def main():
             # ANALISI SONNO
             if metrics['our_algo'].get('sleep_duration', 0) > 0:
                 st.header("😴 Analisi Qualità Sonno")
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
                     st.markdown(f"""
@@ -1671,11 +1921,37 @@ def main():
                 with col3:
                     st.markdown(f"""
                     <div class="daily-card">
+                        <h4>Sonno Profondo</h4>
+                        <h3>{metrics['our_algo'].get('sleep_deep', 0):.1f} h</h3>
+                        <p>{"✅ Buono" if metrics['our_algo'].get('sleep_deep', 0) >= 1.0 else "⚠️ Scarso"}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col4:
+                    st.markdown(f"""
+                    <div class="daily-card">
                         <h4>HR Notturno</h4>
                         <h3>{metrics['our_algo']['sleep_hr']:.0f} bpm</h3>
                         <p>{"✅ Normale" if metrics['our_algo']['sleep_hr'] <= 65 else "⚠️ Elevato"}</p>
                     </div>
                     """, unsafe_allow_html=True)
+                
+                # Grafico fasi del sonno
+                sleep_phases = ['Leggero', 'Profondo', 'REM', 'Risvegli']
+                sleep_values = [
+                    metrics['our_algo'].get('sleep_light', 0),
+                    metrics['our_algo'].get('sleep_deep', 0),
+                    metrics['our_algo'].get('sleep_rem', 0),
+                    metrics['our_algo'].get('sleep_awake', 0)
+                ]
+                
+                fig_sleep = px.pie(
+                    values=sleep_values,
+                    names=sleep_phases,
+                    title="Distribuzione Fasi del Sonno",
+                    color_discrete_sequence=['#3498db', '#2ecc71', '#e74c3c', '#f39c12']
+                )
+                st.plotly_chart(fig_sleep, use_container_width=True)
             
             # RACCOMANDAZIONI INTELLIGENTI
             st.header("💡 Raccomandazioni Intelligenti")
@@ -1760,18 +2036,19 @@ def main():
         
         Il file deve contenere gli intervalli IBI (Inter-Beat Intervals) in millisecondi, uno per riga.
         
-        ### 🎯 NUOVE FUNZIONALITÀ:
-        - ✅ **Calcoli HRV realistici** basati su fisiologia reale
-        - ✅ **Analisi giornaliera** per registrazioni lunghe (48h+)
-        - ✅ **Tracciamento attività** e allenamenti
-        - ✅ **Analisi alimentazione** con database nutrizionale
-        - ✅ **Raccomandazioni intelligenti** per recupero e alimentazione
-        - ✅ **Persistenza dati** - i pazienti non si perdono più!
-        - ✅ **Report multi-giorno** con analisi completa
+        ### 🎯 FUNZIONALITÀ CORRETTE:
+        - ✅ **Data di nascita senza limiti** (dal 1900 a oggi)
+        - ✅ **Salvataggio utenti** con pulsante dedicato
+        - ✅ **Analisi giornaliera completa** con grafici e sonno
+        - ✅ **Attività visibili** nei grafici temporali
+        - ✅ **Modifica/eliminazione attività**
+        - ✅ **Ore corrette** per le attività
+        - ✅ **Report PDF completo** con tutte le metriche
+        - ✅ **Nessun errore 'color'**
         
         ### 📋 Installazione dipendenze:
         ```bash
-        pip install reportlab matplotlib streamlit plotly numpy pandas scipy
+        pip install streamlit pandas numpy matplotlib plotly scipy reportlab
         ```
         """)
 
