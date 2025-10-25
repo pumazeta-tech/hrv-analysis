@@ -57,10 +57,14 @@ def load_user_database():
         return {}
 
 def save_user_database():
-    """Salva il database utenti su file JSON"""
+    """Salva il database utenti su file JSON - CON DEBUG"""
     try:
+        print(f"DEBUG: Tentativo di salvataggio database...")
+        print(f"DEBUG: Numero utenti nel database: {len(st.session_state.user_database)}")
+        
         serializable_db = {}
         for user_key, user_data in st.session_state.user_database.items():
+            print(f"DEBUG: Elaborando utente: {user_key}")
             serializable_db[user_key] = {
                 'profile': user_data['profile'].copy(),
                 'analyses': []
@@ -91,10 +95,16 @@ def save_user_database():
                 
                 serializable_db[user_key]['analyses'].append(serializable_analysis)
         
+        print(f"DEBUG: Database serializzato, salvando su file...")
+        
         with open('user_database.json', 'w', encoding='utf-8') as f:
             json.dump(serializable_db, f, indent=2, ensure_ascii=False)
+        
+        print(f"DEBUG: Salvataggio completato con successo!")
         return True
+        
     except Exception as e:
+        print(f"DEBUG: ERRORE nel salvataggio: {e}")
         st.error(f"Errore nel salvataggio database: {e}")
         return False
 
@@ -753,25 +763,38 @@ def delete_activity(index):
         st.session_state.activities.pop(index)
 
 def save_current_user():
-    """Salva l'utente corrente nel database"""
+    """Salva l'utente corrente nel database - CON DEBUG"""
     user_profile = st.session_state.user_profile
+    print(f"DEBUG save_current_user: Profilo utente: {user_profile}")
+    
     if not user_profile['name'] or not user_profile['surname'] or not user_profile['birth_date']:
-        st.error("Inserisci nome, cognome e data di nascita")
+        print(f"DEBUG: Dati mancanti - nome: {user_profile['name']}, cognome: {user_profile['surname']}, data: {user_profile['birth_date']}")
+        st.error("❌ Inserisci nome, cognome e data di nascita")
         return False
     
     user_key = get_user_key(user_profile)
+    print(f"DEBUG: Chiave utente generata: {user_key}")
+    
     if not user_key:
         return False
     
     if user_key not in st.session_state.user_database:
+        print(f"DEBUG: Nuovo utente, aggiungo al database")
         st.session_state.user_database[user_key] = {
             'profile': user_profile.copy(),
             'analyses': []
         }
+    else:
+        print(f"DEBUG: Utente esistente, aggiorno profilo")
+        st.session_state.user_database[user_key]['profile'] = user_profile.copy()
     
     success = save_user_database()
     if success:
-        st.success("Utente salvato nel database!")
+        st.success("✅ Utente salvato nel database!")
+        print(f"DEBUG: Utente salvato con successo!")
+    else:
+        st.error("❌ Errore nel salvataggio utente")
+    
     return success
 
 def analyze_nutritional_impact_day(day_activities, daily_metrics):
@@ -1076,10 +1099,14 @@ def generate_recommendations(metrics, user_profile, weaknesses):
 # =============================================================================
 
 def get_user_key(user_profile):
-    """Crea una chiave univoca per l'utente"""
+    """Crea una chiave univoca per l'utente - CON DEBUG"""
     if not user_profile['name'] or not user_profile['surname'] or not user_profile['birth_date']:
+        print(f"DEBUG get_user_key: Dati mancanti per generare chiave")
         return None
-    return f"{user_profile['name'].lower()}_{user_profile['surname'].lower()}_{user_profile['birth_date'].isoformat()}"
+    
+    key = f"{user_profile['name'].lower()}_{user_profile['surname'].lower()}_{user_profile['birth_date'].isoformat()}"
+    print(f"DEBUG get_user_key: Chiave generata: {key}")
+    return key
 
 def save_analysis_to_user_database(metrics, start_datetime, end_datetime, selected_range, analysis_type, daily_analyses=None):
     """Salva l'analisi nel database dell'utente"""
@@ -2246,7 +2273,23 @@ def main():
         
         # Storico utenti
         create_user_history_interface()
+      # DEBUG File System
+    st.sidebar.header("🔧 DEBUG File System")
+    import os
+    if os.path.exists('user_database.json'):
+        st.success("✅ user_database.json ESISTE")
+        file_size = os.path.getsize('user_database.json')
+        st.write(f"Dimensione: {file_size} bytes")
+    else:
+        st.error("❌ user_database.json NON TROVATO")
+        st.write("Il file sarà creato al primo salvataggio")
     
+    if st.button("🔄 Forza Salvataggio Manuale", key="force_save"):
+        success = save_user_database()
+        if success:
+            st.success("Salvataggio forzato riuscito!")
+        else:
+            st.error("Errore nel salvataggio forzato")  
     # Upload file
     st.header("📤 Carica File IBI")
     uploaded_file = st.file_uploader("Carica il tuo file .txt o .csv con gli intervalli IBI", type=['txt', 'csv'], key="file_uploader")
