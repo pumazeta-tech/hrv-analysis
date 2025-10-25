@@ -1353,7 +1353,7 @@ def create_daily_analysis_visualization(daily_analyses):
     st.header("📅 Analisi Giornaliera Dettagliata")
     
     # Metriche chiave per giorno
-    days = [f"Giorno {day['day_number']}\n({day['date'].strftime('%d/%m')})" for day in daily_analyses]
+    days = [f"Giorno {day['day_number']}\n({day['date'].strftime('%d/%m/%Y')})" for day in daily_analyses]
     sdnn_values = [day['metrics']['sdnn'] for day in daily_analyses]
     rmssd_values = [day['metrics']['rmssd'] for day in daily_analyses]
     hr_values = [day['metrics']['hr_mean'] for day in daily_analyses]
@@ -1545,7 +1545,7 @@ def create_daily_analysis_visualization(daily_analyses):
         for i, day in enumerate(daily_analyses):
             spectral_data.append({
                 'Giorno': f"Giorno {day['day_number']}",
-                'Data': day['date'].strftime('%d/%m'),
+                'Data': day['date'].strftime('%d/%m/%Y'),
                 'Potenza Totale': f"{day['metrics']['total_power']:.0f} ms²",
                 'VLF': f"{day['metrics']['vlf']:.0f} ms²", 
                 'LF': f"{day['metrics']['lf']:.0f} ms²",
