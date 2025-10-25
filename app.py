@@ -26,11 +26,18 @@ def load_user_database():
                 data = json.load(f)
                 # Convert string dates back to datetime objects
                 for user_key, user_data in data.items():
-                    # Converti la data di nascita
+                    # Converti la data di nascita - CORREZIONE FORMATO DATA
                     if user_data['profile'].get('birth_date'):
-                        user_data['profile']['birth_date'] = datetime.strptime(
-                            user_data['profile']['birth_date'], '%Y-%m-%d'
-                        ).date()
+                        try:
+                            # Prova prima il formato DD/MM/YYYY
+                            user_data['profile']['birth_date'] = datetime.strptime(
+                                user_data['profile']['birth_date'], '%d/%m/%Y'
+                            ).date()
+                        except ValueError:
+                            # Fallback al formato YYYY-MM-DD
+                            user_data['profile']['birth_date'] = datetime.strptime(
+                                user_data['profile']['birth_date'], '%Y-%m-%d'
+                            ).date()
                     
                     for analysis in user_data.get('analyses', []):
                         analysis['timestamp'] = datetime.fromisoformat(analysis['timestamp'])
@@ -59,9 +66,9 @@ def save_user_database():
                 'analyses': []
             }
             
-            # Converti la data di nascita in stringa
+            # Converti la data di nascita in stringa - CORREZIONE: usa formato DD/MM/YYYY
             if serializable_db[user_key]['profile'].get('birth_date'):
-                serializable_db[user_key]['profile']['birth_date'] = serializable_db[user_key]['profile']['birth_date'].isoformat()
+                serializable_db[user_key]['profile']['birth_date'] = serializable_db[user_key]['profile']['birth_date'].strftime('%d/%m/%Y')
             
             for analysis in user_data.get('analyses', []):
                 serializable_analysis = {
@@ -2163,15 +2170,22 @@ def main():
         with col2:
             st.session_state.user_profile['surname'] = st.text_input("Cognome", value=st.session_state.user_profile['surname'], key="surname_input")
         
-        # Data di nascita con formato DD/MM/YYYY
+        # Data di nascita
+        birth_date = st.session_state.user_profile['birth_date']
+        if birth_date is None:
+            birth_date = datetime(1980, 1, 1).date()
+
         st.session_state.user_profile['birth_date'] = st.date_input(
-            "Data di nascita (DD/MM/YYYY)", 
-            value=st.session_state.user_profile['birth_date'] or datetime(1980, 1, 1).date(),
+            "Data di nascita", 
+            value=birth_date,
             min_value=datetime(1900, 1, 1).date(),
             max_value=datetime.now().date(),
-            format="DD/MM/YYYY",
             key="birth_date_input"
         )
+
+        # Mostra la data nel formato italiano
+        if st.session_state.user_profile['birth_date']:
+            st.write(f"Data selezionata: {st.session_state.user_profile['birth_date'].strftime('%d/%m/%Y')}")
         
         st.session_state.user_profile['gender'] = st.selectbox("Sesso", ["Uomo", "Donna"], 
                                                              index=0 if st.session_state.user_profile['gender'] == 'Uomo' else 1,
@@ -2179,6 +2193,9 @@ def main():
         
         if st.session_state.user_profile['birth_date']:
             age = datetime.now().year - st.session_state.user_profile['birth_date'].year
+            # Aggiusta l'età se il compleanno di quest'anno non è ancora arrivato
+            if (datetime.now().month, datetime.now().day) < (st.session_state.user_profile['birth_date'].month, st.session_state.user_profile['birth_date'].day):
+                age -= 1
             st.session_state.user_profile['age'] = age
             st.info(f"Età: {age} anni")
         
@@ -2223,12 +2240,14 @@ def main():
                 start_date = st.date_input("Data Inizio", value=start_datetime.date(), key="start_date_input")
                 start_time = st.time_input("Ora Inizio", value=start_datetime.time(), key="start_time_input")
                 new_start = datetime.combine(start_date, start_time)
+                st.write(f"Data selezionata: {start_date.strftime('%d/%m/%Y')}")
             
             with col2:
                 st.subheader("Fine Analisi")
                 end_date = st.date_input("Data Fine", value=end_datetime.date(), key="end_date_input")
                 end_time = st.time_input("Ora Fine", value=end_datetime.time(), key="end_time_input")
                 new_end = datetime.combine(end_date, end_time)
+                st.write(f"Data selezionata: {end_date.strftime('%d/%m/%Y')}")
             
             if new_start != start_datetime or new_end != end_datetime:
                 st.session_state.analysis_datetimes = {
