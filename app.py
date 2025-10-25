@@ -127,7 +127,7 @@ def get_user_key(user_profile):
     return f"{user_profile['name'].lower()}_{user_profile['surname'].lower()}_{user_profile['birth_date'].isoformat()}"
 
 def init_session_state():
-    """Inizializza lo stato della sessione con persistenza - SENZA NEUROKIT2"""
+    """Inizializza lo stato della sessione con persistenza"""
     # Carica il database all'inizio
     if 'user_database' not in st.session_state:
         st.session_state.user_database = load_user_database()
@@ -165,14 +165,9 @@ def init_session_state():
         st.session_state.last_analysis_duration = None
     if 'editing_activity_index' not in st.session_state:
         st.session_state.editing_activity_index = None
-    
-    # PULISCE LA SIDEBAR - AGGIUNGI QUESTA RIGA
-    if 'sidebar_cleared' not in st.session_state:
-        st.sidebar.empty()
-        st.session_state.sidebar_cleared = True
 
 # =============================================================================
-# FUNZIONI PER CALCOLI HRV
+# FUNZIONI PER CALCOLI HRV - SENZA NEUROKIT2
 # =============================================================================
 
 def calculate_realistic_hrv_metrics(rr_intervals, user_age, user_gender):
@@ -378,12 +373,17 @@ def get_default_metrics(age, gender):
 
 # Database nutrizionale ESPANSO
 NUTRITION_DB = {
-    # CARBOIDRATI
     "pasta": {"inflammatory_score": 2, "glycemic_index": "alto", "recovery_impact": -1, "category": "carboidrato"},
     "riso": {"inflammatory_score": 1, "glycemic_index": "alto", "recovery_impact": -1, "category": "carboidrato"},
     "patate": {"inflammatory_score": 2, "glycemic_index": "alto", "recovery_impact": -1, "category": "carboidrato"},
     "pane": {"inflammatory_score": 2, "glycemic_index": "alto", "recovery_impact": -1, "category": "carboidrato"},
-    # ... (aggiungi il resto del database nutrizionale)
+    "pizza": {"inflammatory_score": 3, "glycemic_index": "alto", "recovery_impact": -2, "category": "carboidrato"},
+    "salmone": {"inflammatory_score": -3, "glycemic_index": "basso", "recovery_impact": 3, "category": "proteina"},
+    "pesce": {"inflammatory_score": -2, "glycemic_index": "basso", "recovery_impact": 2, "category": "proteina"},
+    "carne bianca": {"inflammatory_score": 0, "glycemic_index": "basso", "recovery_impact": 1, "category": "proteina"},
+    "verdura": {"inflammatory_score": -4, "glycemic_index": "basso", "recovery_impact": 4, "category": "vegetale"},
+    "insalata": {"inflammatory_score": -4, "glycemic_index": "basso", "recovery_impact": 4, "category": "vegetale"},
+    "frutta": {"inflammatory_score": -1, "glycemic_index": "medio", "recovery_impact": 1, "category": "frutta"},
 }
 
 # Colori per i tipi di attività
@@ -552,7 +552,7 @@ def delete_activity(index):
         st.session_state.activities.pop(index)
 
 # =============================================================================
-# FUNZIONE PRINCIPALE
+# FUNZIONE PRINCIPALE - SENZA NEUROKIT2
 # =============================================================================
 
 def main():
@@ -563,85 +563,155 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    # Inizializzazione SEMPLICE senza NeuroKit2
-    if 'user_profile' not in st.session_state:
-        st.session_state.user_profile = {
-            'name': '',
-            'surname': '', 
-            'birth_date': None,
-            'gender': 'Uomo',
-            'age': 0
-        }
-    if 'activities' not in st.session_state:
-        st.session_state.activities = []
-    if 'user_database' not in st.session_state:
-        st.session_state.user_database = {}
+    init_session_state()
     
-    # Header semplice
-    st.title("❤️ HRV Analytics ULTIMATE")
+    # CSS personalizzato
+    st.markdown("""
+    <style>
+    .main-header {
+        font-size: 3rem;
+        color: #3498db;
+        text-align: center;
+        margin-bottom: 2rem;
+        font-weight: bold;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1.5rem;
+        border-radius: 15px;
+        color: white;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        border: none;
+    }
+    .stButton>button {
+        background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-weight: 600;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Header principale
+    st.markdown('<h1 class="main-header">❤️ HRV Analytics ULTIMATE</h1>', unsafe_allow_html=True)
     
     # =============================================================================
-    # SIDEBAR - VERSIONE PULITA SENZA NEUROKIT2
+    # SIDEBAR - VERSIONE PULITA
     # =============================================================================
     with st.sidebar:
-        st.header("👤 Profilo Utente")
-        
-        # Campi di input
-        nome = st.text_input("Nome", key="nome_input")
-        cognome = st.text_input("Cognome", key="cognome_input")
-        data_nascita = st.date_input("Data di nascita", key="data_input")
-        sesso = st.selectbox("Sesso", ["Uomo", "Donna"], key="sesso_select")
-        
-        # Aggiorna session state
-        st.session_state.user_profile.update({
-            'name': nome,
-            'surname': cognome, 
-            'birth_date': data_nascita,
-            'gender': sesso
-        })
-        
-        # PULSANTE SALVATAGGIO - GRANDE E VISIBILE
-        st.divider()
-        st.header("💾 Salvataggio")
+        st.header("👤 Profilo Paziente")
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("💾 SALVA UTENTE", type="primary", use_container_width=True):
-                if nome and cognome and data_nascita:
-                    user_key = f"{nome}_{cognome}_{data_nascita}"
-                    st.session_state.user_database[user_key] = {
-                        'profile': st.session_state.user_profile.copy(),
-                        'analyses': []
-                    }
-                    st.success("✅ Utente salvato!")
-                else:
-                    st.error("❌ Completa tutti i campi")
-        
+            st.session_state.user_profile['name'] = st.text_input("Nome", value=st.session_state.user_profile['name'], key="name_input")
         with col2:
-            if st.button("🔄 Reset", use_container_width=True):
-                st.session_state.user_profile.update({
-                    'name': '', 'surname': '', 'birth_date': None
-                })
-                st.rerun()
+            st.session_state.user_profile['surname'] = st.text_input("Cognome", value=st.session_state.user_profile['surname'], key="surname_input")
         
-        # DEBUG
+        # Data di nascita
+        birth_date = st.session_state.user_profile['birth_date']
+        if birth_date is None:
+            birth_date = datetime(1980, 1, 1).date()
+
+        st.session_state.user_profile['birth_date'] = st.date_input(
+            "Data di nascita", 
+            value=birth_date,
+            min_value=datetime(1900, 1, 1).date(),
+            max_value=datetime.now().date(),
+            key="birth_date_input"
+        )
+
+        if st.session_state.user_profile['birth_date']:
+            st.write(f"Data selezionata: {st.session_state.user_profile['birth_date'].strftime('%d/%m/%Y')}")
+        
+        st.session_state.user_profile['gender'] = st.selectbox("Sesso", ["Uomo", "Donna"], 
+                                                             index=0 if st.session_state.user_profile['gender'] == 'Uomo' else 1,
+                                                             key="gender_select")
+        
+        if st.session_state.user_profile['birth_date']:
+            age = datetime.now().year - st.session_state.user_profile['birth_date'].year
+            if (datetime.now().month, datetime.now().day) < (st.session_state.user_profile['birth_date'].month, st.session_state.user_profile['birth_date'].day):
+                age -= 1
+            st.session_state.user_profile['age'] = age
+            st.info(f"Età: {age} anni")
+        
+        # PULSANTE SALVA UTENTE - SEMPLICE E VISIBILE
+        st.divider()
+        st.header("💾 Salvataggio")
+        
+        if st.button("💾 SALVA UTENTE NEL DATABASE", type="primary", use_container_width=True):
+            if save_current_user():
+                st.success("✅ Utente salvato!")
+            else:
+                st.error("❌ Inserisci nome, cognome e data di nascita")
+        
+        # DEBUG VISUALE
         st.divider()
         st.header("🔧 Debug")
-        st.write(f"Utenti salvati: {len(st.session_state.user_database)}")
-        st.write(f"Nome: {nome}")
-        st.write(f"Cognome: {cognome}")
-
+        st.write(f"Nome: {st.session_state.user_profile['name']}")
+        st.write(f"Cognome: {st.session_state.user_profile['surname']}")
+        st.write(f"Data: {st.session_state.user_profile['birth_date']}")
+        
+        import os
+        if os.path.exists('user_database.json'):
+            st.success("✅ user_database.json ESISTE")
+        else:
+            st.error("❌ user_database.json NON TROVATO")
+        
+        # Solo le attività
+        create_activity_tracker()
+    
     # =============================================================================
     # CONTENUTO PRINCIPALE
     # =============================================================================
     
+    # Upload file
     st.header("📤 Carica File IBI")
-    uploaded_file = st.file_uploader("Carica file IBI", type=['txt', 'csv'])
+    uploaded_file = st.file_uploader("Carica il tuo file .txt o .csv con gli intervalli IBI", type=['txt', 'csv'], key="file_uploader")
     
-    if uploaded_file:
-        st.success("✅ File pronto per l'analisi!")
+    if uploaded_file is not None:
+        try:
+            content = uploaded_file.getvalue().decode('utf-8')
+            lines = content.strip().split('\n')
+            
+            rr_intervals = []
+            for line in lines:
+                if line.strip():
+                    try:
+                        rr_intervals.append(float(line.strip()))
+                    except ValueError:
+                        continue
+            
+            if len(rr_intervals) == 0:
+                st.error("❌ Nessun dato IBI valido trovato nel file")
+                return
+            
+            st.success(f"✅ File caricato con successo! {len(rr_intervals)} intervalli RR trovati")
+            
+        except Exception as e:
+            st.error(f"❌ Errore durante l'elaborazione del file: {str(e)}")
+    
     else:
-        st.info("👆 Carica un file IBI per iniziare")
+        # Schermata iniziale
+        st.info("""
+        ### 👆 Carica un file IBI per iniziare l'analisi
+        
+        **Formati supportati:** .txt, .csv
+        
+        Il file deve contenere gli intervalli IBI (Inter-Beat Intervals) in millisecondi, uno per riga.
+        
+        ### 🎯 FUNZIONALITÀ COMPLETE:
+        - ✅ **Calcoli HRV realistici** con valori fisiologici corretti
+        - ✅ **Analisi giornaliera** per registrazioni lunghe
+        - ✅ **Tracciamento attività** completo con modifica/eliminazione
+        - ✅ **Analisi alimentazione** con database nutrizionale ESPANSO
+        - ✅ **Persistenza dati** - utenti salvati automaticamente
+        """)
 
 if __name__ == "__main__":
     main()
