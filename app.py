@@ -558,98 +558,85 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    init_session_state()
+    # Inizializzazione SEMPLICE senza NeuroKit2
+    if 'user_profile' not in st.session_state:
+        st.session_state.user_profile = {
+            'name': '',
+            'surname': '', 
+            'birth_date': None,
+            'gender': 'Uomo',
+            'age': 0
+        }
+    if 'activities' not in st.session_state:
+        st.session_state.activities = []
+    if 'user_database' not in st.session_state:
+        st.session_state.user_database = {}
     
-    # CSS semplificato
-    st.markdown("""
-    <style>
-    .main-header {
-        font-size: 3rem;
-        color: #3498db;
-        text-align: center;
-        margin-bottom: 2rem;
-        font-weight: bold;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    # Header semplice
+    st.title("❤️ HRV Analytics ULTIMATE")
     
-    # Header principale
-    st.markdown('<h1 class="main-header">❤️ HRV Analytics ULTIMATE</h1>', unsafe_allow_html=True)
-
     # =============================================================================
-    # SIDEBAR MOLTO SEMPLIFICATA
+    # SIDEBAR - VERSIONE PULITA SENZA NEUROKIT2
     # =============================================================================
     with st.sidebar:
         st.header("👤 Profilo Utente")
         
-        # Solo i campi essenziali
-        nome = st.text_input("Nome", value=st.session_state.user_profile['name'])
-        cognome = st.text_input("Cognome", value=st.session_state.user_profile['surname'])
+        # Campi di input
+        nome = st.text_input("Nome", key="nome_input")
+        cognome = st.text_input("Cognome", key="cognome_input")
+        data_nascita = st.date_input("Data di nascita", key="data_input")
+        sesso = st.selectbox("Sesso", ["Uomo", "Donna"], key="sesso_select")
         
-        # Aggiorna il session state
-        st.session_state.user_profile['name'] = nome
-        st.session_state.user_profile['surname'] = cognome
+        # Aggiorna session state
+        st.session_state.user_profile.update({
+            'name': nome,
+            'surname': cognome, 
+            'birth_date': data_nascita,
+            'gender': sesso
+        })
         
-        # Data di nascita semplice
-        data_nascita = st.date_input("Data di nascita", 
-                                   value=st.session_state.user_profile['birth_date'] or datetime(1980, 1, 1).date())
-        st.session_state.user_profile['birth_date'] = data_nascita
-        
-        st.write(f"Data selezionata: {data_nascita.strftime('%d/%m/%Y')}")
-        
-        # PULSANTE SALVATAGGIO - SEMPLICE E VISIBILE
+        # PULSANTE SALVATAGGIO - GRANDE E VISIBILE
         st.divider()
         st.header("💾 Salvataggio")
         
-        if st.button("💾 SALVA UTENTE", type="primary", use_container_width=True):
-            if nome and cognome and data_nascita:
-                # Salva direttamente senza funzioni complesse
-                user_key = f"{nome.lower()}_{cognome.lower()}_{data_nascita.isoformat()}"
-                st.session_state.user_database[user_key] = {
-                    'profile': {
-                        'name': nome,
-                        'surname': cognome,
-                        'birth_date': data_nascita,
-                        'gender': st.session_state.user_profile['gender'],
-                        'age': datetime.now().year - data_nascita.year
-                    },
-                    'analyses': []
-                }
-                
-                # Salva su file
-                try:
-                    with open('user_database.json', 'w', encoding='utf-8') as f:
-                        json.dump(st.session_state.user_database, f, indent=2, default=str, ensure_ascii=False)
-                    st.success("✅ Utente salvato con successo!")
-                except Exception as e:
-                    st.error(f"❌ Errore salvataggio: {e}")
-            else:
-                st.error("❌ Inserisci nome, cognome e data di nascita")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("💾 SALVA UTENTE", type="primary", use_container_width=True):
+                if nome and cognome and data_nascita:
+                    user_key = f"{nome}_{cognome}_{data_nascita}"
+                    st.session_state.user_database[user_key] = {
+                        'profile': st.session_state.user_profile.copy(),
+                        'analyses': []
+                    }
+                    st.success("✅ Utente salvato!")
+                else:
+                    st.error("❌ Completa tutti i campi")
         
-        # DEBUG VISIBILE
+        with col2:
+            if st.button("🔄 Reset", use_container_width=True):
+                st.session_state.user_profile.update({
+                    'name': '', 'surname': '', 'birth_date': None
+                })
+                st.rerun()
+        
+        # DEBUG
         st.divider()
         st.header("🔧 Debug")
+        st.write(f"Utenti salvati: {len(st.session_state.user_database)}")
         st.write(f"Nome: {nome}")
         st.write(f"Cognome: {cognome}")
-        st.write(f"Data: {data_nascita}")
-        
-        import os
-        if os.path.exists('user_database.json'):
-            st.success("✅ user_database.json ESISTE")
-        else:
-            st.error("❌ user_database.json NON TROVATO")
 
     # =============================================================================
     # CONTENUTO PRINCIPALE
     # =============================================================================
     
     st.header("📤 Carica File IBI")
-    uploaded_file = st.file_uploader("Carica il tuo file .txt o .csv con gli intervalli IBI", type=['txt', 'csv'])
+    uploaded_file = st.file_uploader("Carica file IBI", type=['txt', 'csv'])
     
-    if uploaded_file is not None:
-        st.success("✅ File caricato!")
+    if uploaded_file:
+        st.success("✅ File pronto per l'analisi!")
     else:
-        st.info("👆 Carica un file IBI per iniziare l'analisi")
+        st.info("👆 Carica un file IBI per iniziare")
 
 if __name__ == "__main__":
     main()
