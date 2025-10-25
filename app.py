@@ -2229,44 +2229,56 @@ def main():
     # Header principale
     st.markdown('<h1 class="main-header">❤️ HRV Analytics ULTIMATE</h1>', unsafe_allow_html=True)
     
-    # Sidebar per profilo utente e attività
-    with st.sidebar:
-        st.header("👤 Profilo Paziente")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.session_state.user_profile['name'] = st.text_input("Nome", value=st.session_state.user_profile['name'], key="name_input")
-        with col2:
-            st.session_state.user_profile['surname'] = st.text_input("Cognome", value=st.session_state.user_profile['surname'], key="surname_input")
-        
-        # Data di nascita
-        birth_date = st.session_state.user_profile['birth_date']
-        if birth_date is None:
-            birth_date = datetime(1980, 1, 1).date()
+# Sidebar per profilo utente e attività
+with st.sidebar:
+    st.header("👤 Profilo Paziente")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.session_state.user_profile['name'] = st.text_input("Nome", value=st.session_state.user_profile['name'], key="name_input")
+    with col2:
+        st.session_state.user_profile['surname'] = st.text_input("Cognome", value=st.session_state.user_profile['surname'], key="surname_input")
+    
+    # Data di nascita
+    birth_date = st.session_state.user_profile['birth_date']
+    if birth_date is None:
+        birth_date = datetime(1980, 1, 1).date()
 
-        st.session_state.user_profile['birth_date'] = st.date_input(
-            "Data di nascita", 
-            value=birth_date,
-            min_value=datetime(1900, 1, 1).date(),
-            max_value=datetime.now().date(),
-            key="birth_date_input"
-        )
+    st.session_state.user_profile['birth_date'] = st.date_input(
+        "Data di nascita", 
+        value=birth_date,
+        min_value=datetime(1900, 1, 1).date(),
+        max_value=datetime.now().date(),
+        key="birth_date_input"
+    )
 
-        # Mostra la data nel formato italiano
-        if st.session_state.user_profile['birth_date']:
-            st.write(f"Data selezionata: {st.session_state.user_profile['birth_date'].strftime('%d/%m/%Y')}")
-        
-        st.session_state.user_profile['gender'] = st.selectbox("Sesso", ["Uomo", "Donna"], 
-                                                             index=0 if st.session_state.user_profile['gender'] == 'Uomo' else 1,
-                                                             key="gender_select")
-        
-        if st.session_state.user_profile['birth_date']:
-            age = datetime.now().year - st.session_state.user_profile['birth_date'].year
-            # Aggiusta l'età se il compleanno di quest'anno non è ancora arrivato
-            if (datetime.now().month, datetime.now().day) < (st.session_state.user_profile['birth_date'].month, st.session_state.user_profile['birth_date'].day):
-                age -= 1
-            st.session_state.user_profile['age'] = age
-            st.info(f"Età: {age} anni")
+    # Mostra la data nel formato italiano
+    if st.session_state.user_profile['birth_date']:
+        st.write(f"Data selezionata: {st.session_state.user_profile['birth_date'].strftime('%d/%m/%Y')}")
+    
+    st.session_state.user_profile['gender'] = st.selectbox("Sesso", ["Uomo", "Donna"], 
+                                                         index=0 if st.session_state.user_profile['gender'] == 'Uomo' else 1,
+                                                         key="gender_select")
+    
+    if st.session_state.user_profile['birth_date']:
+        age = datetime.now().year - st.session_state.user_profile['birth_date'].year
+        # Aggiusta l'età se il compleanno di quest'anno non è ancora arrivato
+        if (datetime.now().month, datetime.now().day) < (st.session_state.user_profile['birth_date'].month, st.session_state.user_profile['birth_date'].day):
+            age -= 1
+        st.session_state.user_profile['age'] = age
+        st.info(f"Età: {age} anni")
+    
+    # PULSANTE SALVATAGGIO PRINCIPALE - SEMPRE VISIBILE
+    st.divider()
+    if st.button("💾 SALVA UTENTE NEL DATABASE", type="primary", use_container_width=True):
+        if save_current_user():
+            st.success("✅ Utente salvato nel database!")
+        else:
+            st.error("❌ Inserisci nome, cognome e data di nascita")
+    
+    # Poi il resto...
+    create_activity_tracker()
+    create_user_history_interface()
         
         # Aggiungi tracker attività
         create_activity_tracker()
